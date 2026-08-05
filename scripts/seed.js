@@ -67,7 +67,13 @@ async function main() {
   console.log("Wgrywanie wpisów dziennych...");
   let dzienneCount = 0;
   for (const [kurnikId, entries] of Object.entries(seed.dzienne)) {
-    const rows = entries.map((e) => ({
+    // Zabezpieczenie: jeśli w danych źródłowych trafi się dwa wiersze na tę samą datę,
+    // baza odrzuci cały pakiet (unique kurnik_id+date). Zostawiamy ostatni wpis dla danej daty.
+    const byDate = new Map();
+    entries.forEach((e) => byDate.set(e.date, e));
+    const deduped = [...byDate.values()];
+
+    const rows = deduped.map((e) => ({
       kurnik_id: kurnikId, date: e.date, tydz_zycia: e.tydzZycia,
       kury_zywe: e.kuryZywe, koguty_zywe: e.kogutyZywe, upadki_kury: e.upadkiKury ?? 0, upadki_koguty: e.upadkiKoguty ?? 0,
       cum_mortality: e.cumMortality, jaja_ogolem: e.jajaOgolem, jaja_wyleg: e.jajaWyleg, hatch_egg_pct: e.hatchEggPct, lay_pct: e.layPct,

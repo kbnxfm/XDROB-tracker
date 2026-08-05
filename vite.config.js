@@ -12,8 +12,8 @@ export default defineConfig({
         name: "XDROB Tracker",
         short_name: "XDROB",
         description: "Monitoring ferm i wylęgarni XDROB",
-        theme_color: "#1C1917",
-        background_color: "#1C1917",
+        theme_color: "#FAF6EF",
+        background_color: "#FAF6EF",
         display: "standalone",
         start_url: "/",
         icons: [

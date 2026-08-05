@@ -23,6 +23,19 @@ const weeksBetween = (start, date) => {
 const round = (n, d = 1) => (Number.isFinite(n) ? Number(n.toFixed(d)) : null);
 const pct = (num, den) => (den ? (num / den) * 100 : null);
 const fmt = (v, suffix = "") => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${v}${suffix}`);
+const lastWithLay = (list) => {
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].layPct !== null && list[i].layPct !== undefined) return list[i];
+  }
+  return list[list.length - 1] || null;
+};
+const bestLay = (list) => {
+  let best = null;
+  list.forEach((e) => {
+    if (e.layPct !== null && e.layPct !== undefined && (best === null || e.layPct > best.layPct)) best = e;
+  });
+  return best;
+};
 const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
 function getAllKurniki(farms) {
@@ -37,14 +50,16 @@ function useAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [authReady, setAuthReady] = useState(false);
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthReady(true);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, sess) => {
       setSession(sess);
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -56,7 +71,7 @@ function useAuth() {
       if (!data) {
         const { data: created } = await supabase
           .from("profiles")
-          .insert({ id: session.user.id, email: session.user.email, role: "worker" })
+          .insert({ id: session.user.id, email: session.user.email, role: "pending" })
           .select()
           .maybeSingle();
         data = created;
@@ -66,8 +81,9 @@ function useAuth() {
   }, [session]);
 
   const logout = () => supabase.auth.signOut();
+  const clearRecovery = () => setRecovery(false);
 
-  return { session, profile, authReady, logout };
+  return { session, profile, authReady, logout, recovery, clearRecovery };
 }
 
 /* ============================== WARSTWA DANYCH (Supabase) ============================== */
@@ -346,6 +362,17 @@ function AuthGate() {
 
   const submit = async () => {
     setError(""); setInfo("");
+    if (mode === "forgot") {
+      setLoading(true);
+      try {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+        if (err) { setError(err.message); return; }
+        setInfo("Jeśli konto z tym adresem istnieje, wysłaliśmy link do zresetowania hasła. Sprawdź skrzynkę (też SPAM).");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (password.length < 6) { setError("Hasło musi mieć min. 6 znaków."); return; }
     if (mode === "register" && password !== password2) { setError("Hasła nie są identyczne."); return; }
     setLoading(true);
@@ -366,6 +393,8 @@ function AuthGate() {
     }
   };
 
+  const switchMode = (m) => { setMode(m); setError(""); setInfo(""); };
+
   return (
     <div className="screen role-screen">
       <div className="brand">
@@ -373,18 +402,79 @@ function AuthGate() {
         <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Monitoring ferm i wylęgarni</div></div>
       </div>
       <div className="auth-card">
-        <div className="tabs">
-          <button className={`tab ${mode === "login" ? "tab-active" : ""}`} onClick={() => { setMode("login"); setError(""); setInfo(""); }}>Zaloguj się</button>
-          <button className={`tab ${mode === "register" ? "tab-active" : ""}`} onClick={() => { setMode("register"); setError(""); setInfo(""); }}>Utwórz konto</button>
-        </div>
+        {mode !== "forgot" && (
+          <div className="tabs">
+            <button className={`tab ${mode === "login" ? "tab-active" : ""}`} onClick={() => switchMode("login")}>Zaloguj się</button>
+            <button className={`tab ${mode === "register" ? "tab-active" : ""}`} onClick={() => switchMode("register")}>Utwórz konto</button>
+          </div>
+        )}
+        {mode === "forgot" && <div className="field-label" style={{ marginBottom: "-2px" }}>Reset hasła</div>}
+
         <Field label="Adres e-mail"><input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ty@xdrob.pl" /></Field>
-        <Field label="Hasło"><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min. 6 znaków" /></Field>
+        {mode !== "forgot" && <Field label="Hasło"><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min. 6 znaków" /></Field>}
         {mode === "register" && <Field label="Powtórz hasło"><input type="password" className="input" value={password2} onChange={(e) => setPassword2(e.target.value)} /></Field>}
+
         {error && <div className="ai-error">{error}</div>}
         {info && <div className="added-confirm">{info}</div>}
-        <button className="btn btn-primary btn-block" disabled={loading || !email || !password} onClick={submit}>
-          {loading ? "Chwila…" : mode === "login" ? "Zaloguj się" : "Utwórz konto"}
+
+        <button className="btn btn-primary btn-block" disabled={loading || !email || (mode !== "forgot" && !password)} onClick={submit}>
+          {loading ? "Chwila…" : mode === "login" ? "Zaloguj się" : mode === "register" ? "Utwórz konto" : "Wyślij link resetujący"}
         </button>
+
+        {mode === "login" && <button className="mini-btn-text" onClick={() => switchMode("forgot")}>Zapomniałeś hasła?</button>}
+        {mode === "forgot" && <button className="mini-btn-text" onClick={() => switchMode("login")}>← Wróć do logowania</button>}
+      </div>
+    </div>
+  );
+}
+
+function ResetPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setError("");
+    if (password.length < 6) { setError("Hasło musi mieć min. 6 znaków."); return; }
+    if (password !== password2) { setError("Hasła nie są identyczne."); return; }
+    setLoading(true);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    onDone();
+  };
+
+  return (
+    <div className="screen role-screen">
+      <div className="brand">
+        <div className="brand-mark">XD</div>
+        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Ustaw nowe hasło</div></div>
+      </div>
+      <div className="auth-card">
+        <Field label="Nowe hasło"><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min. 6 znaków" /></Field>
+        <Field label="Powtórz nowe hasło"><input type="password" className="input" value={password2} onChange={(e) => setPassword2(e.target.value)} /></Field>
+        {error && <div className="ai-error">{error}</div>}
+        <button className="btn btn-primary btn-block" disabled={loading || !password} onClick={submit}>{loading ? "Zapisuję…" : "Ustaw nowe hasło"}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== OCZEKIWANIE NA ZATWIERDZENIE ============================== */
+function PendingApproval({ email, onLogout }) {
+  return (
+    <div className="screen role-screen">
+      <div className="brand">
+        <div className="brand-mark">XD</div>
+        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Monitoring ferm i wylęgarni</div></div>
+      </div>
+      <div className="auth-card">
+        <div className="field-label">Konto oczekuje na zatwierdzenie</div>
+        <p className="helper-text" style={{ marginTop: 0 }}>
+          Konto <b>{email}</b> zostało utworzone, ale nie ma jeszcze przydzielonej roli. Skontaktuj się z administratorem (Kubą), żeby nadał Ci dostęp.
+        </p>
+        <button className="btn btn-ghost btn-block" onClick={onLogout}>Wyloguj</button>
       </div>
     </div>
   );
@@ -602,7 +692,8 @@ function FarmRole({ store, farms, reload, onBack }) {
     allKurniki.forEach((k) => {
       const list = store.dzienne[k.id] || [];
       if (!list.length) return;
-      const last = list[list.length - 1];
+      const last = lastWithLay(list);
+      if (!last) return;
       let tone = "ok";
       if (last.layPct !== null && last.layPct < 50) tone = "alert";
       else if (last.layPct !== null && last.layPct < 65) tone = "watch";
@@ -892,28 +983,39 @@ function EditKurnikForm({ kurnik, onSave, onCancel }) {
   );
 }
 
-function FarmManager({ farms, reload, onBack }) {
+function FarmManager({ farms, store, reload, onBack }) {
   const [newFarmName, setNewFarmName] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [editingKurnikId, setEditingKurnikId] = useState(null);
   const [renamingFarmId, setRenamingFarmId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
-  const [viewing, setViewing] = useState(null);
+  const [viewingId, setViewingId] = useState(null);
+  const [error, setError] = useState("");
 
-  const addFarm = async () => { if (!newFarmName.trim()) return; await addFarmDb(newFarmName.trim()); setNewFarmName(""); await reload(); };
-  const removeFarm = async (id) => { await removeFarmDb(id); await reload(); };
-  const submitRename = async (id) => { if (!renameValue.trim()) return; await renameFarmDb(id, renameValue.trim()); setRenamingFarmId(null); await reload(); };
-  const addKurnikTo = async (farmId, kurnik) => { await addKurnikDb(farmId, kurnik); await reload(); };
-  const updateKurnik = async (updated) => { await updateKurnikDb(updated); setEditingKurnikId(null); await reload(); };
-  const removeKurnik = async (id) => { await removeKurnikDb(id); await reload(); };
+  const run = async (fn) => {
+    setError("");
+    const err = await fn();
+    if (err) { setError("Błąd zapisu: " + err.message); return; }
+    await reload();
+  };
 
-  if (viewing) {
-    return <KurnikDetail kurnik={viewing} entries={viewing.entries} onBack={() => setViewing(null)} />;
+  const addFarm = () => { if (!newFarmName.trim()) return; run(() => addFarmDb(newFarmName.trim())).then(() => setNewFarmName("")); };
+  const removeFarm = (id) => run(() => removeFarmDb(id));
+  const submitRename = (id) => { if (!renameValue.trim()) return; run(() => renameFarmDb(id, renameValue.trim())).then(() => setRenamingFarmId(null)); };
+  const addKurnikTo = (farmId, kurnik) => run(() => addKurnikDb(farmId, kurnik));
+  const updateKurnik = (updated) => run(() => updateKurnikDb(updated)).then(() => setEditingKurnikId(null));
+  const removeKurnik = (id) => run(() => removeKurnikDb(id));
+
+  if (viewingId) {
+    const all = getAllKurniki(farms);
+    const k = all.find((kk) => kk.id === viewingId);
+    return <KurnikDetail kurnik={k} entries={store?.dzienne[viewingId] || []} onBack={() => setViewingId(null)} />;
   }
 
   return (
     <div className="screen">
       <TopBar title="Fermy i kurniki" subtitle="Zarządzanie strukturą gospodarstwa" onBack={onBack} />
+      {error && <div className="ai-error">{error}</div>}
       <div className="manage-add-farm">
         <Field label="Nazwa nowej fermy"><TextInput value={newFarmName} onChange={setNewFarmName} placeholder="np. Ferma Gorzewo" /></Field>
         <button className="btn btn-primary btn-block" disabled={!newFarmName.trim()} onClick={addFarm}>+ Dodaj fermę</button>
@@ -943,6 +1045,7 @@ function FarmManager({ farms, reload, onBack }) {
                   <div key={k.id} className="kurnik-manage-row">
                     <span className="kmr-info">{k.name} · {k.line || "—"} · {k.hens + k.roosters} szt.</span>
                     <span className="kmr-actions">
+                      <button className="mini-btn" onClick={() => setViewingId(k.id)} title="Podgląd danych">👁</button>
                       <button className="mini-btn" onClick={() => setEditingKurnikId(k.id)} title="Edytuj">✎</button>
                       <ConfirmButton className="mini-btn mini-btn-danger" label="✕" onConfirm={() => removeKurnik(k.id)} />
                     </span>
@@ -965,30 +1068,44 @@ function KurnikDetail({ kurnik, entries, onBack }) {
   const sortedDesc = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   const sortedAsc = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
   const chartData = sortedAsc.map((e) => ({ date: e.date.slice(5), Nieśność: e.layPct, Upadki: e.cumMortality }));
-  const layVals = entries.map((e) => e.layPct).filter((v) => v !== null && v !== undefined);
   const totalEggs = entries.reduce((sum, e) => sum + (Number(e.jajaOgolem) || 0), 0);
   const last = sortedDesc[0];
+  const lastLayEntry = lastWithLay(sortedAsc);
+  const bestLayEntry = bestLay(entries);
+  const currentTone = lastLayEntry?.layPct > 65 ? "good" : lastLayEntry?.layPct > 50 ? "watch" : "alert";
 
   return (
     <div className="screen">
       <TopBar title={`${kurnik.farmName} — ${kurnik.name}`} subtitle={`${kurnik.line || "—"} · wstawiono ${kurnik.start || "—"}`} onBack={onBack} />
-      <div className="calc-grid">
-        <Stat label="Nieśność (ostatnia)" value={fmt(last?.layPct, "%")} tone={last?.layPct > 65 ? "good" : last?.layPct > 50 ? "watch" : "alert"} />
-        <Stat label="Upadki skum." value={fmt(last?.cumMortality, "%")} tone={last?.cumMortality > 5 ? "alert" : "good"} />
-        <Stat label="Nieśność min / max" value={layVals.length ? `${fmt(round(Math.min(...layVals), 1))} / ${fmt(round(Math.max(...layVals), 1))}` : "—"} />
-        <Stat label="Jaja łącznie" value={fmt(totalEggs)} />
+
+      <div className="data-card" style={{ marginBottom: "16px" }}>
+        <div className="hero-row">
+          <div className={`hero-stat hero-${currentTone}`}>
+            <div className="hero-value">{fmt(lastLayEntry?.layPct, "%")}</div>
+            <div className="hero-label">nieśność teraz{lastLayEntry?.date ? ` · ${lastLayEntry.date}` : ""}</div>
+          </div>
+          <div className="hero-secondary">
+            <div><span className="hero-sec-value">{fmt(bestLayEntry?.layPct, "%")}</span><span className="hero-sec-label">najlepsza{bestLayEntry?.date ? ` (${bestLayEntry.date})` : ""}</span></div>
+            <div><span className="hero-sec-value">{fmt(last?.cumMortality, "%")}</span><span className="hero-sec-label">upadki skumulowane</span></div>
+          </div>
+        </div>
+        <div className="chip-row">
+          <div className="chip"><span className="chip-label">Jaja łącznie</span><span className="chip-value">{fmt(totalEggs)}</span></div>
+          <div className="chip"><span className="chip-label">Wpisów</span><span className="chip-value">{entries.length}</span></div>
+        </div>
       </div>
+
       {chartData.length > 0 ? (
         <div className="chart-card">
           <div className="chart-title">Pełny trend — nieśność i upadki skumulowane</div>
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#423A30" />
-              <XAxis dataKey="date" stroke="#A89A85" fontSize={11} />
-              <YAxis stroke="#A89A85" fontSize={11} />
-              <Tooltip contentStyle={{ background: "#2A241E", border: "1px solid #423A30", color: "#F2EDE4" }} />
-              <Line type="monotone" dataKey="Nieśność" stroke="#E8A33D" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="Upadki" stroke="#B5443A" strokeWidth={2} dot={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E6DCC8" />
+              <XAxis dataKey="date" stroke="#8B7F6E" fontSize={11} />
+              <YAxis stroke="#8B7F6E" fontSize={11} />
+              <Tooltip contentStyle={{ background: "#FFFFFF", border: "1px solid #E6DCC8", color: "#2B2420" }} />
+              <Line type="monotone" dataKey="Nieśność" stroke="#C97C2E" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Upadki" stroke="#A63D30" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -1267,7 +1384,8 @@ function OwnerDashboard({ store, farms, onBack }) {
     allKurniki.forEach((k) => {
       const list = store.dzienne[k.id] || [];
       if (!list.length) return;
-      const last = list[list.length - 1];
+      const last = lastWithLay(list);
+      if (!last) return;
       let tone = "ok";
       if (last.layPct !== null && last.layPct < 50) tone = "alert";
       else if (last.layPct !== null && last.layPct < 65) tone = "watch";
@@ -1277,9 +1395,21 @@ function OwnerDashboard({ store, farms, onBack }) {
   }, [store, allKurniki]);
 
   const activeKurniki = allKurniki.filter((k) => (store.dzienne[k.id] || []).length > 0);
-  const avgLay = round(activeKurniki.reduce((sum, k) => sum + store.dzienne[k.id][store.dzienne[k.id].length - 1].layPct, 0) / (activeKurniki.length || 1), 1);
+  const lastLayValues = activeKurniki.map((k) => lastWithLay(store.dzienne[k.id])?.layPct).filter((v) => v !== null && v !== undefined);
+  const avgLay = lastLayValues.length ? round(lastLayValues.reduce((a, b) => a + b, 0) / lastLayValues.length, 1) : null;
   const alerts = Object.values(status).filter((s) => s.tone === "alert").length;
   const lastHatch = store.wylegarnia.length ? store.wylegarnia[store.wylegarnia.length - 1] : null;
+
+  const ranking = useMemo(() => {
+    return activeKurniki
+      .map((k) => {
+        const list = store.dzienne[k.id] || [];
+        const cur = lastWithLay(list);
+        const best = bestLay(list);
+        return { id: k.id, name: k.name, farmName: k.farmName, current: cur?.layPct ?? null, best: best?.layPct ?? null, bestDate: best?.date };
+      })
+      .sort((a, b) => (b.current ?? -1) - (a.current ?? -1));
+  }, [activeKurniki, store]);
 
   if (detailId) {
     const k = allKurniki.find((kk) => kk.id === detailId);
@@ -1296,6 +1426,28 @@ function OwnerDashboard({ store, farms, onBack }) {
         <Stat label="Alerty" value={alerts} tone={alerts > 0 ? "alert" : "good"} />
         <Stat label="Ostatni wylęg" value={lastHatch ? fmt(lastHatch.wylegNaladu, "%") : "—"} />
       </div>
+
+      <div className="section-title">Zestawienie kurników</div>
+      <div className="rank-list">
+        {ranking.length === 0 && <p className="helper-text">Brak jeszcze danych do zestawienia.</p>}
+        {ranking.map((r, i) => {
+          const tone = r.current === null ? "neutral" : r.current > 65 ? "good" : r.current > 50 ? "watch" : "alert";
+          return (
+            <button key={r.id} className="rank-row" onClick={() => setDetailId(r.id)}>
+              <span className="rank-pos">{i + 1}</span>
+              <span className="rank-info">
+                <span className="rank-name">{r.name}</span>
+                <span className="rank-farm">{r.farmName}</span>
+              </span>
+              <span className="rank-values">
+                <span className={`rank-current rank-${tone}`}>{fmt(r.current, "%")}</span>
+                <span className="rank-best">najlepsza {fmt(r.best, "%")}{r.bestDate ? ` · ${r.bestDate}` : ""}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <button className="kurnik-detail-link" onClick={() => setShowHatchery(true)}>🥚 Zobacz pełne dane wylęgarni</button>
       <div className="section-title">Fermy</div>
       <p className="helper-text">Stuknij kurnik, aby zobaczyć pełną historię wpisów.</p>
@@ -1331,7 +1483,7 @@ function OwnerDashboard({ store, farms, onBack }) {
 
 /* ============================== APP ROOT ============================== */
 export default function App() {
-  const { session, profile, authReady, logout } = useAuth();
+  const { session, profile, authReady, logout, recovery, clearRecovery } = useAuth();
   const { farms, store, ready, reload } = useSupabaseData(session);
   const [mode, setMode] = useState(null);
   const [screen, setScreen] = useState(null);
@@ -1348,8 +1500,12 @@ export default function App() {
     body = <div className="screen"><p className="helper-text">Wczytywanie…</p></div>;
   } else if (!session) {
     body = <AuthGate />;
+  } else if (recovery) {
+    body = <ResetPasswordScreen onDone={clearRecovery} />;
   } else if (!profile || !ready) {
     body = <div className="screen"><p className="helper-text">Wczytywanie danych…</p></div>;
+  } else if (profile.role === "pending") {
+    body = <PendingApproval email={session.user.email} onLogout={logout} />;
   } else if (!mode) {
     body = <ModeSelect onPick={setMode} user={session.user.email} onLogout={logout} />;
   } else if (mode === "admin" && !screen) {
@@ -1365,7 +1521,7 @@ export default function App() {
   } else if (screen === "owner") {
     body = <OwnerDashboard store={store} farms={farms} onBack={backToRoleMenu} />;
   } else if (screen === "manage") {
-    body = <FarmManager farms={farms} reload={reload} onBack={backToRoleMenu} />;
+    body = <FarmManager farms={farms} store={store} reload={reload} onBack={backToRoleMenu} />;
   }
 
   return (
@@ -1373,16 +1529,16 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
         .app-root {
-          --bg: #1C1917; --surface: #2A241E; --surface-2: #362F27;
-          --accent: #E8A33D; --accent-2: #B5443A; --success: #7A9B6E;
-          --text: #F2EDE4; --text-muted: #A89A85; --border: #423A30;
+          --bg: #FAF6EF; --surface: #FFFFFF; --surface-2: #F2EBDD;
+          --accent: #C97C2E; --accent-2: #A63D30; --success: #4F7A52;
+          --text: #2B2420; --text-muted: #8B7F6E; --border: #E6DCC8;
           background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
           min-height: 100vh; width: 100%; padding-bottom: 32px; box-sizing: border-box;
         }
         .app-shell { max-width: 480px; margin: 0 auto; }
         .screen { padding: 20px 16px 8px; }
         .brand { display: flex; align-items: center; gap: 12px; padding: 24px 4px 8px; }
-        .brand-mark { width: 48px; height: 48px; border-radius: 10px; background: var(--accent); color: #1C1917; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px; }
+        .brand-mark { width: 48px; height: 48px; border-radius: 10px; background: var(--accent); color: var(--text); font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px; }
         .brand-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 22px; letter-spacing: 0.3px; }
         .brand-sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
         .role-list { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
@@ -1404,10 +1560,10 @@ export default function App() {
         .farm-group-title { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
         .egg-tray { display: flex; flex-wrap: wrap; gap: 8px; }
         .egg-cup { width: 76px; height: 78px; border-radius: 6px 6px 40% 40%; background: var(--surface); border: 1.5px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; color: var(--text); padding: 4px; }
-        .egg-cup-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,163,61,0.35); }
-        .egg-cup-ok { background: rgba(122,155,110,0.15); border-color: var(--success); }
-        .egg-cup-watch { background: rgba(232,163,61,0.15); border-color: var(--accent); }
-        .egg-cup-alert { background: rgba(181,68,58,0.18); border-color: var(--accent-2); }
+        .egg-cup-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(201,124,46,0.35); }
+        .egg-cup-ok { background: rgba(79,122,82,0.12); border-color: var(--success); }
+        .egg-cup-watch { background: rgba(201,124,46,0.12); border-color: var(--accent); }
+        .egg-cup-alert { background: rgba(166,61,48,0.14); border-color: var(--accent-2); }
         .egg-cup-label { font-size: 11px; font-weight: 600; text-align: center; line-height: 1.2; }
         .egg-cup-metric { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted); }
         .helper-text { color: var(--text-muted); font-size: 13px; margin-top: 14px; text-align: center; }
@@ -1428,7 +1584,7 @@ export default function App() {
         .calc-row b { color: var(--accent); font-family: 'IBM Plex Mono', monospace; }
         .wizard-nav { display: flex; gap: 10px; margin-top: 18px; }
         .btn { border: none; border-radius: 10px; padding: 13px 18px; font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14.5px; cursor: pointer; letter-spacing: 0.3px; }
-        .btn-primary { background: var(--accent); color: #1C1917; flex: 1; }
+        .btn-primary { background: var(--accent); color: var(--text); flex: 1; }
         .btn-primary:disabled { opacity: 0.4; }
         .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
         .btn-ghost:disabled { opacity: 0.4; }
@@ -1439,7 +1595,7 @@ export default function App() {
         .log-type { color: var(--accent); font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; }
         .tabs { display: flex; gap: 6px; margin-bottom: 18px; background: var(--surface); padding: 4px; border-radius: 10px; }
         .tab { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 9px 4px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-        .tab-active { background: var(--accent); color: #1C1917; }
+        .tab-active { background: var(--accent); color: var(--text); }
         .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0; }
         .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
         .stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
@@ -1525,6 +1681,24 @@ export default function App() {
         .chip-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
         .chip-value { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13.5px; }
 
+        .rank-list { display: flex; flex-direction: column; gap: 6px; }
+        .rank-row {
+          display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border);
+          border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; width: 100%;
+        }
+        .rank-row:active { background: var(--surface-2); }
+        .rank-pos { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 13px; color: var(--text-muted); width: 18px; flex-shrink: 0; }
+        .rank-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+        .rank-name { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px; }
+        .rank-farm { font-size: 11px; color: var(--text-muted); }
+        .rank-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+        .rank-current { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 16px; }
+        .rank-current.rank-good { color: var(--success); }
+        .rank-current.rank-watch { color: var(--accent); }
+        .rank-current.rank-alert { color: var(--accent-2); }
+        .rank-current.rank-neutral { color: var(--text-muted); }
+        .rank-best { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+
         /* ============ SZEROKIE EKRANY (desktop) ============ */
         @media (min-width: 860px) {
           .app-shell { max-width: 1120px; }
@@ -1547,6 +1721,7 @@ export default function App() {
           .egg-tray { gap: 12px; }
           .egg-cup { width: 92px; height: 94px; }
           .entry-list, .naklad-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start; }
+          .rank-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; }
           .recent-log { max-width: 720px; }
 
           /* Formularze: nie rozciągaj na całą szerokość, trzymaj czytelną kolumnę */
