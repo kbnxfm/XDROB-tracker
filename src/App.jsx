@@ -1043,6 +1043,11 @@ function HatcheryDataView({ store, onBack }) {
       .sort((a, b) => (a.date < b.date ? 1 : -1));
   };
 
+  const naklDostawcy = (entries) => {
+    const names = [...new Set(entries.map((e) => e.dostawca).filter(Boolean))];
+    return names.length > 2 ? `${names.slice(0, 2).join(", ")} +${names.length - 2}` : names.join(", ");
+  };
+
   const wylegNaklady = useMemo(() => {
     return groupByNaklad(wylegList).map((g) => {
       const totalNaladu = g.entries.reduce((s, e) => s + (Number(e.naladu) || 0), 0);
@@ -1054,6 +1059,7 @@ function HatcheryDataView({ store, onBack }) {
         avgZapl: totalNaladu ? round(zaplW / totalNaladu, 1) : null,
         avgWyleg: totalNaladu ? round(wylegW / totalNaladu, 1) : null,
         dataWylegu: g.entries[0]?.dataWylegu || "",
+        dostawcyLabel: naklDostawcy(g.entries),
       };
     });
   }, [wylegList]);
@@ -1061,7 +1067,7 @@ function HatcheryDataView({ store, onBack }) {
   const masaNaklady = useMemo(() => {
     return groupByNaklad(masaList).map((g) => {
       const chick = g.entries.map((e) => e.chickPct).filter((v) => v !== null && v !== undefined);
-      return { ...g, avgChickPct: chick.length ? round(chick.reduce((a, b) => a + b, 0) / chick.length, 1) : null };
+      return { ...g, avgChickPct: chick.length ? round(chick.reduce((a, b) => a + b, 0) / chick.length, 1) : null, dostawcyLabel: naklDostawcy(g.entries) };
     });
   }, [masaList]);
 
@@ -1114,7 +1120,7 @@ function HatcheryDataView({ store, onBack }) {
                 <div className="naklad-header" onClick={() => setExpandedNaklad(expandedNaklad === g.date ? null : g.date)}>
                   <div>
                     <div className="naklad-date">Nakład {g.date}{g.dataWylegu ? ` → wylęg ${g.dataWylegu}` : ""}</div>
-                    <div className="naklad-sub">{g.count} {g.count === 1 ? "źródło" : "źródeł"} · {fmt(g.totalNaladu)} jaj · {fmt(g.totalPiskleta)} piskląt</div>
+                    <div className="naklad-sub">{g.dostawcyLabel || `${g.count} ${g.count === 1 ? "źródło" : "źródeł"}`} · {fmt(g.totalNaladu)} jaj · {fmt(g.totalPiskleta)} piskląt</div>
                   </div>
                   <div className="naklad-summary">
                     <span className="naklad-pct" data-tone={g.avgWyleg > 80 ? "good" : g.avgWyleg > 65 ? "watch" : "alert"}>{fmt(g.avgWyleg, "%")}</span>
@@ -1123,21 +1129,34 @@ function HatcheryDataView({ store, onBack }) {
                 </div>
                 {expandedNaklad === g.date && (
                   <div className="naklad-body">
-                    {g.entries.map((e) => (
-                      <div key={e.id} className="entry-card entry-card-nested">
-                        <div className="entry-card-header"><span className="entry-date">{e.dostawca}</span><span className="entry-week">{e.nrPartii ? `partia ${e.nrPartii}` : ""}</span></div>
-                        <div className="entry-grid">
-                          <div><span className="entry-label">Jaja nałożone</span><span className="entry-value">{fmt(e.naladu)}</span></div>
-                          <div><span className="entry-label">Zapłodnienie</span><span className="entry-value">{fmt(e.zaplPct, "%")}</span></div>
-                          <div><span className="entry-label">Zamarłe</span><span className="entry-value">{fmt(e.zamarlePct, "%")}</span></div>
-                          <div><span className="entry-label">Nie wyklute</span><span className="entry-value">{fmt(e.nieWyklutePct, "%")}</span></div>
-                          <div><span className="entry-label">Wylęg z nał.</span><span className="entry-value">{fmt(e.wylegNaladu, "%")}</span></div>
-                          <div><span className="entry-label">Wylęg z zapł.</span><span className="entry-value">{fmt(e.wylegZapl, "%")}</span></div>
-                          <div><span className="entry-label">Pisklęta zdrowe</span><span className="entry-value">{fmt(e.pisklietaZdrowe)}</span></div>
+                    {g.entries.map((e) => {
+                      const tone = e.wylegNaladu > 80 ? "good" : e.wylegNaladu > 65 ? "watch" : "alert";
+                      return (
+                        <div key={e.id} className="data-card">
+                          <div className="data-card-top">
+                            <span className="data-card-title">{e.dostawca}</span>
+                            {e.nrPartii && <span className="data-card-tag">partia {e.nrPartii}</span>}
+                          </div>
+                          <div className="hero-row">
+                            <div className={`hero-stat hero-${tone}`}>
+                              <div className="hero-value">{fmt(e.wylegNaladu, "%")}</div>
+                              <div className="hero-label">wylęg z nałożenia</div>
+                            </div>
+                            <div className="hero-secondary">
+                              <div><span className="hero-sec-value">{fmt(e.pisklietaZdrowe)}</span><span className="hero-sec-label">piskląt</span></div>
+                              <div><span className="hero-sec-value">{fmt(e.naladu)}</span><span className="hero-sec-label">jaj nałożonych</span></div>
+                            </div>
+                          </div>
+                          <div className="chip-row">
+                            <div className="chip"><span className="chip-label">Zapłodnienie</span><span className="chip-value">{fmt(e.zaplPct, "%")}</span></div>
+                            <div className="chip"><span className="chip-label">Zamarłe</span><span className="chip-value">{fmt(e.zamarlePct, "%")}</span></div>
+                            <div className="chip"><span className="chip-label">Nie wyklute</span><span className="chip-value">{fmt(e.nieWyklutePct, "%")}</span></div>
+                            <div className="chip"><span className="chip-label">Wylęg z zapł.</span><span className="chip-value">{fmt(e.wylegZapl, "%")}</span></div>
+                          </div>
+                          {e.uwagi && <div className="entry-notes"><div>📝 {e.uwagi}</div></div>}
                         </div>
-                        {e.uwagi && <div className="entry-notes"><div>📝 {e.uwagi}</div></div>}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1151,17 +1170,32 @@ function HatcheryDataView({ store, onBack }) {
           {tempStats && <div className="calc-grid"><Stat label="Partii" value={tempStats.count} /><Stat label="Śr. °F ogółem" value={fmt(tempStats.avgOverall)} tone={tempStats.avgOverall > 99 && tempStats.avgOverall < 100.5 ? "good" : "watch"} /><Stat label="Poza normą" value={tempStats.outOfRange} tone={tempStats.outOfRange > 0 ? "alert" : "good"} /></div>}
           <div className="entry-list">
             {tempList.length === 0 && <p className="helper-text">Brak partii do wyświetlenia.</p>}
-            {tempList.map((e) => (
-              <div key={e.id} className="entry-card">
-                <div className="entry-card-header"><span className="entry-date">Nakład {e.dataNaladu}</span><span className="entry-week">{e.dostawca}</span></div>
-                <div className="entry-grid">
-                  <div><span className="entry-label">Śr. °F</span><span className="entry-value">{fmt(e.avg, "°F")}</span></div>
-                  <div><span className="entry-label">Min / Max</span><span className="entry-value">{fmt(e.min)} / {fmt(e.max)}</span></div>
-                  <div><span className="entry-label">Liczba pomiarów</span><span className="entry-value">{e.measurements?.length || 0}</span></div>
+            {tempList.map((e) => {
+              const tone = e.avg > 99.5 && e.avg < 100.5 ? "good" : "watch";
+              return (
+                <div key={e.id} className="data-card">
+                  <div className="data-card-top">
+                    <span className="data-card-title">{e.dostawca}</span>
+                    <span className="data-card-tag">nakład {e.dataNaladu}</span>
+                  </div>
+                  <div className="hero-row">
+                    <div className={`hero-stat hero-${tone}`}>
+                      <div className="hero-value">{fmt(e.avg, "°F")}</div>
+                      <div className="hero-label">średnia temperatura</div>
+                    </div>
+                    <div className="hero-secondary">
+                      <div><span className="hero-sec-value">{fmt(e.min)} / {fmt(e.max)}</span><span className="hero-sec-label">min / max</span></div>
+                      <div><span className="hero-sec-value">{e.measurements?.length || 0}</span><span className="hero-sec-label">pomiarów</span></div>
+                    </div>
+                  </div>
+                  {e.measurements?.length > 0 && (
+                    <div className="measure-list" style={{ marginTop: "10px" }}>
+                      {e.measurements.map((m, i) => <div key={i} className="log-row"><span>Dz.{m.dzien || "—"}</span><span>{m.temp}°F</span><span>{m.polozenie}</span></div>)}
+                    </div>
+                  )}
                 </div>
-                {e.measurements?.length > 0 && <div className="measure-list" style={{ marginTop: "8px" }}>{e.measurements.map((m, i) => <div key={i} className="log-row"><span>Dz.{m.dzien || "—"}</span><span>{m.temp}°F</span><span>{m.polozenie}</span></div>)}</div>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -1176,7 +1210,7 @@ function HatcheryDataView({ store, onBack }) {
                 <div className="naklad-header" onClick={() => setExpandedNaklad(expandedNaklad === `masa-${g.date}` ? null : `masa-${g.date}`)}>
                   <div>
                     <div className="naklad-date">Nakład {g.date}</div>
-                    <div className="naklad-sub">{g.count} {g.count === 1 ? "pomiar" : "pomiarów"}</div>
+                    <div className="naklad-sub">{g.dostawcyLabel || `${g.count} ${g.count === 1 ? "pomiar" : "pomiarów"}`}</div>
                   </div>
                   <div className="naklad-summary">
                     <span className="naklad-pct">{fmt(g.avgChickPct, "%")}</span>
@@ -1185,17 +1219,31 @@ function HatcheryDataView({ store, onBack }) {
                 </div>
                 {expandedNaklad === `masa-${g.date}` && (
                   <div className="naklad-body">
-                    {g.entries.map((e) => (
-                      <div key={e.id} className="entry-card entry-card-nested">
-                        <div className="entry-card-header"><span className="entry-date">{e.dostawca}</span></div>
-                        <div className="entry-grid">
-                          <div><span className="entry-label">Waga dz.0</span><span className="entry-value">{fmt(e.waga0, "g")}</span></div>
-                          {e.checkpoints?.filter((c) => c.loss !== null).map((c) => <div key={c.day}><span className="entry-label">Utrata dz.{c.day}</span><span className="entry-value">{fmt(c.loss, "%")}</span></div>)}
-                          <div><span className="entry-label">Waga pisklęcia</span><span className="entry-value">{fmt(e.wagaPisklecia, "g")}</span></div>
+                    {g.entries.map((e) => {
+                      const d18 = e.checkpoints?.find((c) => c.day === 18)?.loss ?? null;
+                      return (
+                        <div key={e.id} className="data-card">
+                          <div className="data-card-top"><span className="data-card-title">{e.dostawca || "—"}</span></div>
+                          <div className="hero-row">
+                            <div className="hero-stat hero-watch">
+                              <div className="hero-value">{fmt(d18, "%")}</div>
+                              <div className="hero-label">utrata masy (dz. 18)</div>
+                            </div>
+                            <div className="hero-secondary">
+                              <div><span className="hero-sec-value">{fmt(e.chickPct, "%")}</span><span className="hero-sec-label">pisklę / jajo</span></div>
+                              <div><span className="hero-sec-value">{fmt(e.wagaPisklecia, "g")}</span><span className="hero-sec-label">waga pisklęcia</span></div>
+                            </div>
+                          </div>
+                          <div className="chip-row">
+                            {e.checkpoints?.filter((c) => c.loss !== null && c.day !== 18).map((c) => (
+                              <div key={c.day} className="chip"><span className="chip-label">Dz. {c.day}</span><span className="chip-value">{fmt(c.loss, "%")}</span></div>
+                            ))}
+                            <div className="chip"><span className="chip-label">Waga dz. 0</span><span className="chip-value">{fmt(e.waga0, "g")}</span></div>
+                          </div>
+                          {e.uwagi && <div className="entry-notes"><div>📝 {e.uwagi}</div></div>}
                         </div>
-                        {e.uwagi && <div className="entry-notes"><div>📝 {e.uwagi}</div></div>}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1456,6 +1504,26 @@ export default function App() {
         .naklad-arrow { color: var(--text-muted); font-size: 11px; }
         .naklad-body { border-top: 1px solid var(--border); padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
         .entry-card-nested { background: var(--surface-2); }
+
+        .data-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+        .data-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+        .data-card-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
+        .data-card-tag { font-size: 11px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
+        .hero-row { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px dashed var(--border); margin-bottom: 12px; }
+        .hero-stat { flex-shrink: 0; }
+        .hero-value { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 32px; line-height: 1; }
+        .hero-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; }
+        .hero-good .hero-value { color: var(--success); }
+        .hero-watch .hero-value { color: var(--accent); }
+        .hero-alert .hero-value { color: var(--accent-2); }
+        .hero-secondary { display: flex; flex-direction: column; gap: 6px; flex: 1; border-left: 1px solid var(--border); padding-left: 16px; }
+        .hero-secondary > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+        .hero-sec-value { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; }
+        .hero-sec-label { font-size: 11px; color: var(--text-muted); }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; min-width: 74px; }
+        .chip-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+        .chip-value { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13.5px; }
 
         /* ============ SZEROKIE EKRANY (desktop) ============ */
         @media (min-width: 860px) {
