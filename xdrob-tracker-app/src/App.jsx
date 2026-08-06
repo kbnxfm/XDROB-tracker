@@ -23,19 +23,6 @@ const weeksBetween = (start, date) => {
 const round = (n, d = 1) => (Number.isFinite(n) ? Number(n.toFixed(d)) : null);
 const pct = (num, den) => (den ? (num / den) * 100 : null);
 const fmt = (v, suffix = "") => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${v}${suffix}`);
-const lastWithLay = (list) => {
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].layPct !== null && list[i].layPct !== undefined) return list[i];
-  }
-  return list[list.length - 1] || null;
-};
-const bestLay = (list) => {
-  let best = null;
-  list.forEach((e) => {
-    if (e.layPct !== null && e.layPct !== undefined && (best === null || e.layPct > best.layPct)) best = e;
-  });
-  return best;
-};
 const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
 function getAllKurniki(farms) {
@@ -692,8 +679,7 @@ function FarmRole({ store, farms, reload, onBack }) {
     allKurniki.forEach((k) => {
       const list = store.dzienne[k.id] || [];
       if (!list.length) return;
-      const last = lastWithLay(list);
-      if (!last) return;
+      const last = list[list.length - 1];
       let tone = "ok";
       if (last.layPct !== null && last.layPct < 50) tone = "alert";
       else if (last.layPct !== null && last.layPct < 65) tone = "watch";
@@ -874,16 +860,16 @@ function UtrataMasyForm({ list, options, onSaved }) {
         <Field label="Data nałożenia"><input type="date" className="input" value={f.dataNaladu} onChange={(e) => setF((s) => ({ ...s, dataNaladu: e.target.value }))} /></Field>
         <Field label="Dostawca"><Select value={f.dostawca} onChange={(v) => setF((s) => ({ ...s, dostawca: v }))} options={options} /></Field>
       </div>
-      <Field label="Waga dz. 0 (kg/150szt)"><NumInput value={f.waga0} onChange={(v) => setF((s) => ({ ...s, waga0: v }))} /></Field>
+      <Field label="Waga dz. 0 (g)"><NumInput value={f.waga0} onChange={(v) => setF((s) => ({ ...s, waga0: v }))} /></Field>
       {rows.map((r) => (
         <div className="checkpoint-row" key={r.day}>
           <div className="checkpoint-day">Dz. {r.day}</div>
-          <NumInput value={r.waga} onChange={(v) => setCp(r.day, "waga", v)} placeholder="kg/150szt" />
+          <NumInput value={r.waga} onChange={(v) => setCp(r.day, "waga", v)} placeholder="waga (g)" />
           <NumInput value={r.nrAL} onChange={(v) => setCp(r.day, "nrAL", v)} placeholder="nr AL" />
           <span className="checkpoint-loss">{fmt(r.loss, "%")}</span>
         </div>
       ))}
-      <Field label="Waga pisklęcia (kg/150szt)"><NumInput value={f.wagaPisklecia} onChange={(v) => setF((s) => ({ ...s, wagaPisklecia: v }))} /></Field>
+      <Field label="Waga pisklęcia (g)"><NumInput value={f.wagaPisklecia} onChange={(v) => setF((s) => ({ ...s, wagaPisklecia: v }))} /></Field>
       <div className="calc-row">Pisklę/jajo %: <b>{fmt(chickPct, "%")}</b></div>
       <Field label="Uwagi"><TextInput value={f.uwagi} onChange={(v) => setF((s) => ({ ...s, uwagi: v }))} /></Field>
       {error && <div className="ai-error">{error}</div>}
@@ -1068,33 +1054,19 @@ function KurnikDetail({ kurnik, entries, onBack }) {
   const sortedDesc = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   const sortedAsc = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
   const chartData = sortedAsc.map((e) => ({ date: e.date.slice(5), Nieśność: e.layPct, Upadki: e.cumMortality }));
+  const layVals = entries.map((e) => e.layPct).filter((v) => v !== null && v !== undefined);
   const totalEggs = entries.reduce((sum, e) => sum + (Number(e.jajaOgolem) || 0), 0);
   const last = sortedDesc[0];
-  const lastLayEntry = lastWithLay(sortedAsc);
-  const bestLayEntry = bestLay(entries);
-  const currentTone = lastLayEntry?.layPct > 65 ? "good" : lastLayEntry?.layPct > 50 ? "watch" : "alert";
 
   return (
     <div className="screen">
       <TopBar title={`${kurnik.farmName} — ${kurnik.name}`} subtitle={`${kurnik.line || "—"} · wstawiono ${kurnik.start || "—"}`} onBack={onBack} />
-
-      <div className="data-card" style={{ marginBottom: "16px" }}>
-        <div className="hero-row">
-          <div className={`hero-stat hero-${currentTone}`}>
-            <div className="hero-value">{fmt(lastLayEntry?.layPct, "%")}</div>
-            <div className="hero-label">nieśność teraz{lastLayEntry?.date ? ` · ${lastLayEntry.date}` : ""}</div>
-          </div>
-          <div className="hero-secondary">
-            <div><span className="hero-sec-value">{fmt(bestLayEntry?.layPct, "%")}</span><span className="hero-sec-label">najlepsza{bestLayEntry?.date ? ` (${bestLayEntry.date})` : ""}</span></div>
-            <div><span className="hero-sec-value">{fmt(last?.cumMortality, "%")}</span><span className="hero-sec-label">upadki skumulowane</span></div>
-          </div>
-        </div>
-        <div className="chip-row">
-          <div className="chip"><span className="chip-label">Jaja łącznie</span><span className="chip-value">{fmt(totalEggs)}</span></div>
-          <div className="chip"><span className="chip-label">Wpisów</span><span className="chip-value">{entries.length}</span></div>
-        </div>
+      <div className="calc-grid">
+        <Stat label="Nieśność (ostatnia)" value={fmt(last?.layPct, "%")} tone={last?.layPct > 65 ? "good" : last?.layPct > 50 ? "watch" : "alert"} />
+        <Stat label="Upadki skum." value={fmt(last?.cumMortality, "%")} tone={last?.cumMortality > 5 ? "alert" : "good"} />
+        <Stat label="Nieśność min / max" value={layVals.length ? `${fmt(round(Math.min(...layVals), 1))} / ${fmt(round(Math.max(...layVals), 1))}` : "—"} />
+        <Stat label="Jaja łącznie" value={fmt(totalEggs)} />
       </div>
-
       {chartData.length > 0 ? (
         <div className="chart-card">
           <div className="chart-title">Pełny trend — nieśność i upadki skumulowane</div>
@@ -1348,14 +1320,14 @@ function HatcheryDataView({ store, onBack }) {
                             </div>
                             <div className="hero-secondary">
                               <div><span className="hero-sec-value">{fmt(e.chickPct, "%")}</span><span className="hero-sec-label">pisklę / jajo</span></div>
-                              <div><span className="hero-sec-value">{fmt(e.wagaPisklecia)}</span><span className="hero-sec-label">waga pisklęcia (kg/150szt)</span></div>
+                              <div><span className="hero-sec-value">{fmt(e.wagaPisklecia, "g")}</span><span className="hero-sec-label">waga pisklęcia</span></div>
                             </div>
                           </div>
                           <div className="chip-row">
                             {e.checkpoints?.filter((c) => c.loss !== null && c.day !== 18).map((c) => (
                               <div key={c.day} className="chip"><span className="chip-label">Dz. {c.day}</span><span className="chip-value">{fmt(c.loss, "%")}</span></div>
                             ))}
-                            <div className="chip"><span className="chip-label">Waga dz. 0</span><span className="chip-value">{fmt(e.waga0)} kg/150szt</span></div>
+                            <div className="chip"><span className="chip-label">Waga dz. 0</span><span className="chip-value">{fmt(e.waga0, "g")}</span></div>
                           </div>
                           {e.uwagi && <div className="entry-notes"><div>📝 {e.uwagi}</div></div>}
                         </div>
@@ -1384,8 +1356,7 @@ function OwnerDashboard({ store, farms, onBack }) {
     allKurniki.forEach((k) => {
       const list = store.dzienne[k.id] || [];
       if (!list.length) return;
-      const last = lastWithLay(list);
-      if (!last) return;
+      const last = list[list.length - 1];
       let tone = "ok";
       if (last.layPct !== null && last.layPct < 50) tone = "alert";
       else if (last.layPct !== null && last.layPct < 65) tone = "watch";
@@ -1395,21 +1366,9 @@ function OwnerDashboard({ store, farms, onBack }) {
   }, [store, allKurniki]);
 
   const activeKurniki = allKurniki.filter((k) => (store.dzienne[k.id] || []).length > 0);
-  const lastLayValues = activeKurniki.map((k) => lastWithLay(store.dzienne[k.id])?.layPct).filter((v) => v !== null && v !== undefined);
-  const avgLay = lastLayValues.length ? round(lastLayValues.reduce((a, b) => a + b, 0) / lastLayValues.length, 1) : null;
+  const avgLay = round(activeKurniki.reduce((sum, k) => sum + store.dzienne[k.id][store.dzienne[k.id].length - 1].layPct, 0) / (activeKurniki.length || 1), 1);
   const alerts = Object.values(status).filter((s) => s.tone === "alert").length;
   const lastHatch = store.wylegarnia.length ? store.wylegarnia[store.wylegarnia.length - 1] : null;
-
-  const ranking = useMemo(() => {
-    return activeKurniki
-      .map((k) => {
-        const list = store.dzienne[k.id] || [];
-        const cur = lastWithLay(list);
-        const best = bestLay(list);
-        return { id: k.id, name: k.name, farmName: k.farmName, current: cur?.layPct ?? null, best: best?.layPct ?? null, bestDate: best?.date };
-      })
-      .sort((a, b) => (b.current ?? -1) - (a.current ?? -1));
-  }, [activeKurniki, store]);
 
   if (detailId) {
     const k = allKurniki.find((kk) => kk.id === detailId);
@@ -1426,28 +1385,6 @@ function OwnerDashboard({ store, farms, onBack }) {
         <Stat label="Alerty" value={alerts} tone={alerts > 0 ? "alert" : "good"} />
         <Stat label="Ostatni wylęg" value={lastHatch ? fmt(lastHatch.wylegNaladu, "%") : "—"} />
       </div>
-
-      <div className="section-title">Zestawienie kurników</div>
-      <div className="rank-list">
-        {ranking.length === 0 && <p className="helper-text">Brak jeszcze danych do zestawienia.</p>}
-        {ranking.map((r, i) => {
-          const tone = r.current === null ? "neutral" : r.current > 65 ? "good" : r.current > 50 ? "watch" : "alert";
-          return (
-            <button key={r.id} className="rank-row" onClick={() => setDetailId(r.id)}>
-              <span className="rank-pos">{i + 1}</span>
-              <span className="rank-info">
-                <span className="rank-name">{r.name}</span>
-                <span className="rank-farm">{r.farmName}</span>
-              </span>
-              <span className="rank-values">
-                <span className={`rank-current rank-${tone}`}>{fmt(r.current, "%")}</span>
-                <span className="rank-best">najlepsza {fmt(r.best, "%")}{r.bestDate ? ` · ${r.bestDate}` : ""}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
       <button className="kurnik-detail-link" onClick={() => setShowHatchery(true)}>🥚 Zobacz pełne dane wylęgarni</button>
       <div className="section-title">Fermy</div>
       <p className="helper-text">Stuknij kurnik, aby zobaczyć pełną historię wpisów.</p>
@@ -1681,24 +1618,6 @@ export default function App() {
         .chip-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
         .chip-value { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13.5px; }
 
-        .rank-list { display: flex; flex-direction: column; gap: 6px; }
-        .rank-row {
-          display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border);
-          border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; width: 100%;
-        }
-        .rank-row:active { background: var(--surface-2); }
-        .rank-pos { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 13px; color: var(--text-muted); width: 18px; flex-shrink: 0; }
-        .rank-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
-        .rank-name { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px; }
-        .rank-farm { font-size: 11px; color: var(--text-muted); }
-        .rank-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
-        .rank-current { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 16px; }
-        .rank-current.rank-good { color: var(--success); }
-        .rank-current.rank-watch { color: var(--accent); }
-        .rank-current.rank-alert { color: var(--accent-2); }
-        .rank-current.rank-neutral { color: var(--text-muted); }
-        .rank-best { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
-
         /* ============ SZEROKIE EKRANY (desktop) ============ */
         @media (min-width: 860px) {
           .app-shell { max-width: 1120px; }
@@ -1721,7 +1640,6 @@ export default function App() {
           .egg-tray { gap: 12px; }
           .egg-cup { width: 92px; height: 94px; }
           .entry-list, .naklad-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; align-items: start; }
-          .rank-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; }
           .recent-log { max-width: 720px; }
 
           /* Formularze: nie rozciągaj na całą szerokość, trzymaj czytelną kolumnę */
