@@ -603,6 +603,11 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
   const waterFeed = round(Number(form.woda) / ((Number(form.paszaKury) || 0) + (Number(form.paszaKog) || 0) || 1), 2);
   const tydz = weeksBetween(flock.start, form.date);
 
+  const lastEntry = useMemo(() => {
+    if (!entries || !entries.length) return null;
+    return [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+  }, [entries]);
+
   const canNext = step < STEPS.length - 1;
   const canPrev = step > 0;
 
@@ -622,6 +627,17 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
       <div className="form-body">
         {step === 0 && (
           <>
+            {lastEntry && (
+              <div className="last-state-card">
+                <div className="last-state-title">Ostatni wpis — {lastEntry.date}</div>
+                <div className="last-state-grid">
+                  <span>Kury żywe: <b>{fmt(lastEntry.kuryZywe)}</b></span>
+                  <span>Koguty żywe: <b>{fmt(lastEntry.kogutyZywe)}</b></span>
+                  <span>Upadki kury: <b>{fmt(lastEntry.upadkiKury)}</b></span>
+                  <span>Upadki koguty: <b>{fmt(lastEntry.upadkiKoguty)}</b></span>
+                </div>
+              </div>
+            )}
             <Field label="Data"><input type="date" className="input" value={form.date} onChange={(e) => set("date")(e.target.value)} /></Field>
             <div className="grid-2">
               <Field label="Kury żywe"><NumInput value={form.kuryZywe} onChange={set("kuryZywe")} /></Field>
@@ -634,6 +650,17 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
         )}
         {step === 1 && (
           <>
+            {lastEntry && (
+              <div className="last-state-card">
+                <div className="last-state-title">Ostatni wpis — {lastEntry.date}</div>
+                <div className="last-state-grid">
+                  <span>Jaja ogółem: <b>{fmt(lastEntry.jajaOgolem)}</b></span>
+                  <span>Jaja wylęgowe: <b>{fmt(lastEntry.jajaWyleg)}</b></span>
+                  <span>Waga jaja (g): <b>{fmt(lastEntry.wagaJaja)}</b></span>
+                  <span>% nieśności: <b>{fmt(lastEntry.layPct, "%")}</b></span>
+                </div>
+              </div>
+            )}
             <div className="grid-2">
               <Field label="Jaja ogółem"><NumInput value={form.jajaOgolem} onChange={set("jajaOgolem")} /></Field>
               <Field label="Jaja wylęgowe"><NumInput value={form.jajaWyleg} onChange={set("jajaWyleg")} /></Field>
@@ -644,6 +671,16 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
         )}
         {step === 2 && (
           <>
+            {lastEntry && (
+              <div className="last-state-card">
+                <div className="last-state-title">Ostatni wpis — {lastEntry.date}</div>
+                <div className="last-state-grid">
+                  <span>Pasza kury (kg): <b>{fmt(lastEntry.paszaKury)}</b></span>
+                  <span>Pasza koguty (kg): <b>{fmt(lastEntry.paszaKog)}</b></span>
+                  <span>Woda (l): <b>{fmt(lastEntry.woda)}</b></span>
+                </div>
+              </div>
+            )}
             <div className="grid-2">
               <Field label="Pasza kury (kg)"><NumInput value={form.paszaKury} onChange={set("paszaKury")} /></Field>
               <Field label="Pasza koguty (kg)"><NumInput value={form.paszaKog} onChange={set("paszaKog")} /></Field>
@@ -654,6 +691,19 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
         )}
         {step === 3 && (
           <>
+            {lastEntry && (
+              <div className="last-state-card">
+                <div className="last-state-title">Ostatni wpis — {lastEntry.date}</div>
+                <div className="last-state-grid">
+                  <span>Temp. kurnika: <b>{fmt(lastEntry.tempKurnik)}</b></span>
+                  <span>Temp. magaz. jaj: <b>{fmt(lastEntry.tempMagazJaj)}</b></span>
+                  <span>Waga kury (g): <b>{fmt(lastEntry.wagaKury)}</b></span>
+                  <span>Waga koguta (g): <b>{fmt(lastEntry.wagaKog)}</b></span>
+                </div>
+                {lastEntry.suplement && <div className="last-state-note">Suplementacja: {lastEntry.suplement}</div>}
+                {lastEntry.notatki && <div className="last-state-note">Notatki: {lastEntry.notatki}</div>}
+              </div>
+            )}
             <div className="grid-2">
               <Field label="Temp. kurnika (°C)"><NumInput value={form.tempKurnik} onChange={set("tempKurnik")} /></Field>
               <Field label="Temp. magaz. jaj (°C)"><NumInput value={form.tempMagazJaj} onChange={set("tempMagazJaj")} /></Field>
@@ -725,6 +775,13 @@ function WylegarniaForm({ list, options, onSaved }) {
   const [error, setError] = useState("");
   const set = (k) => (v) => setF((s) => ({ ...s, [k]: v }));
 
+  const lastForSupplier = useMemo(() => {
+    if (!f.dostawca) return null;
+    const matches = (list || []).filter((e) => e.dostawca === f.dostawca);
+    if (!matches.length) return null;
+    return [...matches].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : a.dataNaladu > b.dataNaladu ? -1 : 0))[0];
+  }, [list, f.dostawca]);
+
   const naladu = (Number(f.dostawaJaj) || 0) - (Number(f.strataMagaz) || 0);
   const niezaplPct = round(pct(Number(f.niezaplodnione), naladu), 2);
   const zamarlePct = round(pct(Number(f.zamarle), naladu), 2);
@@ -750,6 +807,24 @@ function WylegarniaForm({ list, options, onSaved }) {
         <Field label="Data wylęgu"><input type="date" className="input" value={f.dataWylegu} onChange={(e) => set("dataWylegu")(e.target.value)} /></Field>
       </div>
       <Field label="Dostawca / Stado"><Select value={f.dostawca} onChange={set("dostawca")} options={options} /></Field>
+      {lastForSupplier && (
+        <div className="last-state-card">
+          <div className="last-state-title">Ostatnia partia od tego dostawcy — {lastForSupplier.dataNaladu}</div>
+          <div className="last-state-grid">
+            <span>Nr partii: <b>{fmt(lastForSupplier.nrPartii)}</b></span>
+            <span>Dostawa jaj: <b>{fmt(lastForSupplier.dostawaJaj)}</b></span>
+            <span>Strata magaz.: <b>{fmt(lastForSupplier.strataMagaz)}</b></span>
+            <span>Niezapłodnione: <b>{fmt(lastForSupplier.niezaplodnione)}</b></span>
+            <span>Zamarłe: <b>{fmt(lastForSupplier.zamarle)}</b></span>
+            <span>Odpad: <b>{fmt(lastForSupplier.odpad)}</b></span>
+            <span>Nie wyklute: <b>{fmt(lastForSupplier.nieWyklute)}</b></span>
+            <span>Pisklęta zdrowe: <b>{fmt(lastForSupplier.pisklietaZdrowe)}</b></span>
+            <span>Wylęg z nał.: <b>{fmt(lastForSupplier.wylegNaladu, "%")}</b></span>
+            <span>Zapłodnienie: <b>{fmt(lastForSupplier.zaplPct, "%")}</b></span>
+          </div>
+          {lastForSupplier.uwagi && <div className="last-state-note">Uwagi: {lastForSupplier.uwagi}</div>}
+        </div>
+      )}
       <Field label="Nr partii"><TextInput value={f.nrPartii} onChange={set("nrPartii")} /></Field>
       <div className="grid-2">
         <Field label="Dostawa jaj"><NumInput value={f.dostawaJaj} onChange={set("dostawaJaj")} /></Field>
@@ -788,6 +863,13 @@ function TempZarodkaForm({ list, options, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const lastForSupplier = useMemo(() => {
+    if (!header.dostawca) return null;
+    const matches = (list || []).filter((e) => e.dostawca === header.dostawca);
+    if (!matches.length) return null;
+    return [...matches].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : a.dataNaladu > b.dataNaladu ? -1 : 0))[0];
+  }, [list, header.dostawca]);
+
   const addMeasurement = () => { if (m.temp === "") return; setMeasurements((arr) => [...arr, m]); setM({ dzien: "", temp: "", nrAL: "", polozenie: "środek" }); };
   const temps = measurements.map((x) => Number(x.temp)).filter((n) => !Number.isNaN(n));
   const avg = temps.length ? round(temps.reduce((a, b) => a + b, 0) / temps.length, 1) : null;
@@ -810,6 +892,18 @@ function TempZarodkaForm({ list, options, onSaved }) {
         <Field label="Data nałożenia"><input type="date" className="input" value={header.dataNaladu} onChange={(e) => setHeader((s) => ({ ...s, dataNaladu: e.target.value }))} /></Field>
         <Field label="Dostawca / Stado"><Select value={header.dostawca} onChange={(v) => setHeader((s) => ({ ...s, dostawca: v }))} options={options} /></Field>
       </div>
+      {lastForSupplier && (
+        <div className="last-state-card">
+          <div className="last-state-title">Ostatnie pomiary od tego dostawcy — {lastForSupplier.dataNaladu}</div>
+          <div className="last-state-grid">
+            <span>Śr. °F: <b>{fmt(lastForSupplier.avg)}</b></span>
+            <span>Min °F: <b>{fmt(lastForSupplier.min)}</b></span>
+            <span>Max °F: <b>{fmt(lastForSupplier.max)}</b></span>
+            <span>Liczba pomiarów: <b>{fmt(lastForSupplier.measurements?.length)}</b></span>
+          </div>
+          {lastForSupplier.uwagi && <div className="last-state-note">Uwagi: {lastForSupplier.uwagi}</div>}
+        </div>
+      )}
       <div className="measure-add">
         <div className="grid-3">
           <Field label="Dz. pomiaru"><NumInput value={m.dzien} onChange={(v) => setM((s) => ({ ...s, dzien: v }))} /></Field>
@@ -849,6 +943,13 @@ function UtrataMasyForm({ list, options, onSaved }) {
   const [error, setError] = useState("");
   const setCp = (day, key, v) => setCheckpoints((s) => ({ ...s, [day]: { ...s[day], [key]: v } }));
 
+  const lastForSupplier = useMemo(() => {
+    if (!f.dostawca) return null;
+    const matches = (list || []).filter((e) => e.dostawca === f.dostawca);
+    if (!matches.length) return null;
+    return [...matches].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : a.dataNaladu > b.dataNaladu ? -1 : 0))[0];
+  }, [list, f.dostawca]);
+
   const w0 = Number(f.waga0) || null;
   const rows = CHECKPOINT_DAYS.map((day) => {
     const cp = checkpoints[day] || {};
@@ -874,6 +975,20 @@ function UtrataMasyForm({ list, options, onSaved }) {
         <Field label="Data nałożenia"><input type="date" className="input" value={f.dataNaladu} onChange={(e) => setF((s) => ({ ...s, dataNaladu: e.target.value }))} /></Field>
         <Field label="Dostawca"><Select value={f.dostawca} onChange={(v) => setF((s) => ({ ...s, dostawca: v }))} options={options} /></Field>
       </div>
+      {lastForSupplier && (
+        <div className="last-state-card">
+          <div className="last-state-title">Ostatni pomiar od tego dostawcy — {lastForSupplier.dataNaladu}</div>
+          <div className="last-state-grid">
+            <span>Waga dz. 0: <b>{fmt(lastForSupplier.waga0)}</b></span>
+            <span>Waga pisklęcia: <b>{fmt(lastForSupplier.wagaPisklecia)}</b></span>
+            <span>Pisklę/jajo %: <b>{fmt(lastForSupplier.chickPct, "%")}</b></span>
+            {(lastForSupplier.checkpoints || []).filter((c) => c.waga !== "").map((c) => (
+              <span key={c.day}>Dz. {c.day}: <b>{fmt(c.waga)}</b> ({fmt(c.loss, "%")})</span>
+            ))}
+          </div>
+          {lastForSupplier.uwagi && <div className="last-state-note">Uwagi: {lastForSupplier.uwagi}</div>}
+        </div>
+      )}
       <Field label="Waga dz. 0 (kg/150szt)"><NumInput value={f.waga0} onChange={(v) => setF((s) => ({ ...s, waga0: v }))} /></Field>
       {rows.map((r) => (
         <div className="checkpoint-row" key={r.day}>
@@ -1589,6 +1704,10 @@ export default function App() {
         .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
         .btn-ghost:disabled { opacity: 0.4; }
         .btn-block { width: 100%; }
+        .last-state-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+        .last-state-title { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px; }
+        .last-state-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 13px; font-family: 'IBM Plex Mono', monospace; }
+        .last-state-note { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
         .recent-log { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 12px; }
         .recent-title { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
         .log-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 7px 0; border-bottom: 1px solid var(--surface-2); font-family: 'IBM Plex Mono', monospace; }
