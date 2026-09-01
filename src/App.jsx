@@ -213,6 +213,11 @@ async function addDzienneEntry(kurnikId, entry) {
   return error;
 }
 
+async function deleteDzienneEntry(kurnikId, date) {
+  const { error } = await supabase.from("dzienne_entries").delete().eq("kurnik_id", kurnikId).eq("date", date);
+  return error;
+}
+
 async function addWylegarniaEntry(entry) {
   const { error } = await supabase.from("wylegarnia").insert({
     data_naladu: entry.dataNaladu, data_wylegu: entry.dataWylegu || null, dostawca: entry.dostawca || null,
@@ -799,6 +804,23 @@ function FarmRole({ store, farms, reload, onBack }) {
   }, [store, allKurniki]);
 
   if (!kurnikId) {
+    if (!farms || farms.length === 0) {
+      return (
+        <div className="screen">
+          <TopBar title="Witaj w XDROB" onBack={onBack} />
+          <div className="onboarding-card">
+            <div className="onboarding-icon">🐔</div>
+            <div className="onboarding-title">Zacznij od skonfigurowania ferm</div>
+            <div className="onboarding-steps">
+              <div className="onboarding-step"><span className="onboarding-num">1</span><span>Przejdź do <b>Zarządzanie</b> i dodaj fermę</span></div>
+              <div className="onboarding-step"><span className="onboarding-num">2</span><span>Dodaj kurniki z liczbą kur i kogutów</span></div>
+              <div className="onboarding-step"><span className="onboarding-num">3</span><span>Wróć tutaj i zacznij wpisywać dane dzienne</span></div>
+            </div>
+            <p className="helper-text" style={{marginTop:16}}>Jeśli masz już skonfigurowane fermy, odśwież aplikację.</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="screen">
         <TopBar title="Wybierz kurnik" subtitle="Wpis dzienny" onBack={onBack} />
@@ -1173,7 +1195,7 @@ function FarmManager({ farms, store, reload, onBack }) {
   if (viewingId) {
     const all = getAllKurniki(farms);
     const k = all.find((kk) => kk.id === viewingId);
-    return <KurnikDetail kurnik={k} entries={store?.dzienne[viewingId] || []} onBack={() => setViewingId(null)} />;
+    return <KurnikDetail kurnik={k} entries={store?.dzienne[viewingId] || []} onBack={() => setViewingId(null)} onDelete={async (date) => { await deleteDzienneEntry(viewingId, date); reload(); }} />;
   }
 
   return (
@@ -1228,7 +1250,7 @@ function FarmManager({ farms, store, reload, onBack }) {
 }
 
 /* ============================== SZCZEGÓŁY KURNIKA ============================== */
-function KurnikDetail({ kurnik, entries, onBack }) {
+function KurnikDetail({ kurnik, entries, onBack, onDelete }) {
   const sortedDesc = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   const sortedAsc = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
   const chartData = sortedAsc.map((e) => ({ date: e.date.slice(5), Nieśność: e.layPct, Upadki: e.cumMortality }));
@@ -1285,7 +1307,11 @@ function KurnikDetail({ kurnik, entries, onBack }) {
       <div className="entry-list">
         {sortedDesc.map((e, i) => (
           <div key={i} className="entry-card">
-            <div className="entry-card-header"><span className="entry-date">{e.date}</span><span className="entry-week">tydz. życia {e.tydzZycia}</span></div>
+            <div className="entry-card-header">
+              <span className="entry-date">{e.date}</span>
+              <span className="entry-week">tydz. życia {e.tydzZycia}</span>
+              {onDelete && <ConfirmButton className="mini-btn mini-btn-danger" label="✕" confirmLabel="Usuń wpis?" onConfirm={() => onDelete(e.date)} />}
+            </div>
             <div className="entry-grid">
               <div><span className="entry-label">Nieśność</span><span className="entry-value">{fmt(e.layPct, "%")}</span></div>
               <div><span className="entry-label">Upadki skum.</span><span className="entry-value">{fmt(e.cumMortality, "%")}</span></div>
@@ -1632,7 +1658,7 @@ function OwnerDashboard({ store, farms, onBack }) {
 
   if (detailId) {
     const k = allKurniki.find((kk) => kk.id === detailId);
-    return <KurnikDetail kurnik={k} entries={store.dzienne[detailId] || []} onBack={() => setDetailId(null)} />;
+    return <KurnikDetail kurnik={k} entries={store.dzienne[detailId] || []} onBack={() => setDetailId(null)} onDelete={async (date) => { await deleteDzienneEntry(detailId, date); reload(); }} />;
   }
   if (showHatchery) return <HatcheryDataView store={store} farms={farms} onBack={() => setShowHatchery(false)} />;
 
@@ -2021,11 +2047,17 @@ export default function App() {
         .mini-btn-danger.confirming { background: var(--accent-2); color: #fff; width: auto; padding: 0 8px; font-size: 10.5px; font-weight: 600; }
         .mini-btn-text { background: transparent; border: none; color: var(--accent-2); font-size: 12.5px; cursor: pointer; margin-top: 6px; align-self: flex-start; text-decoration: underline; }
         .mini-btn-text.confirming { color: #fff; background: var(--accent-2); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 600; }
+        .onboarding-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px 24px; text-align: center; margin-top: 24px; }
+        .onboarding-icon { font-size: 52px; margin-bottom: 12px; }
+        .onboarding-title { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 600; color: var(--text); margin-bottom: 20px; }
+        .onboarding-steps { display: flex; flex-direction: column; gap: 12px; text-align: left; }
+        .onboarding-step { display: flex; align-items: flex-start; gap: 12px; font-size: 14px; color: var(--text); }
+        .onboarding-num { background: var(--accent); color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
         .kurnik-add-form { background: var(--surface-2); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
         .added-confirm { color: var(--success); font-size: 12.5px; font-weight: 600; text-align: center; }
         .entry-list { display: flex; flex-direction: column; gap: 10px; }
         .entry-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow-sm); }
-        .entry-card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+        .entry-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
         .entry-date { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
         .entry-week { font-size: 11.5px; color: var(--text-muted); }
         .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
