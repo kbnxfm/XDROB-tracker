@@ -1646,7 +1646,7 @@ function HatcheryDataView({ store, farms, onBack }) {
 }
 
 /* ============================== PANEL ZARZĄDCZY ============================== */
-function OwnerDashboard({ store, farms, onBack }) {
+function OwnerDashboard({ store, farms, onBack, reload }) {
   const [detailId, setDetailId] = useState(null);
   const [showHatchery, setShowHatchery] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
@@ -1940,7 +1940,7 @@ export default function App() {
   } else if (screen === "hatcheryView") {
     body = <HatcheryDataView store={store} farms={farms} onBack={backToRoleMenu} />;
   } else if (screen === "owner") {
-    body = <OwnerDashboard store={store} farms={farms} onBack={backToRoleMenu} />;
+    body = <OwnerDashboard store={store} farms={farms} onBack={backToRoleMenu} reload={reload} />;
   } else if (screen === "manage") {
     body = <FarmManager farms={farms} store={store} reload={reload} onBack={backToRoleMenu} />;
   } else if (screen === "dashboard") {
