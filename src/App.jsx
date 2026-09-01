@@ -47,6 +47,20 @@ const bestLay = (list) => {
 };
 const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
+const downloadCSV = (rows, filename) => {
+  const BOM = "﻿";
+  const csv = BOM + rows.map((r) => r.map((v) => {
+    if (v == null) return "";
+    const s = String(v).replace(/\./g, ",");
+    return s.includes(";") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(";")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+};
+
 function getAllKurniki(farms) {
   return farms.flatMap((f) => f.kurniki.map((k) => ({ ...k, farmId: f.id, farmName: f.name })));
 }
@@ -1245,6 +1259,13 @@ function KurnikDetail({ kurnik, entries, onBack }) {
           </ResponsiveContainer>
         </div>
       ) : <p className="helper-text">Brak jeszcze wpisów dla tego kurnika.</p>}
+      {sortedAsc.length > 0 && (
+        <button className="btn btn-ghost btn-block" style={{ marginBottom: 8 }} onClick={() => {
+          const headers = ["Data","Tydz. życia","Kury żywe","Koguty żywe","Upadki kury","Upadki koguty","Śmiertelność %","Jaja ogółem","Nieśność %","Jaja wylęg.","Hatch egg %","Waga jaja g","Pasza kury kg","Dawka kury g/szt","Pasza kog. kg","Woda l","Temp. kurnik °C","Temp. magaz. °C","Waga kury g","Waga kog. g"];
+          const rows = sortedAsc.map((e) => [e.date,e.tydzZycia,e.kuryZywe,e.kogutyZywe,e.upadkiKury,e.upadkiKoguty,e.cumMortality,e.jajaOgolem,e.layPct,e.jajaWyleg,e.hatchEggPct,e.wagaJaja,e.paszaKury,e.doseKury,e.paszaKog,e.woda,e.tempKurnik,e.tempMagazJaj,e.wagaKury,e.wagaKog]);
+          downloadCSV([headers, ...rows], `${kurnik.farmName}_${kurnik.name}_${todayISO()}.csv`);
+        }}>⬇ Eksportuj do CSV (Excel)</button>
+      )}
       <div className="section-title">Wszystkie wpisy ({entries.length})</div>
       <div className="entry-list">
         {sortedDesc.map((e, i) => (
@@ -1404,6 +1425,13 @@ function HatcheryDataView({ store, farms, onBack }) {
               <Stat label="Jaj nałożonych" value={fmt(wylegStats.totalNaladu)} />
               <Stat label="Pisklęta łącznie" value={fmt(wylegStats.totalPiskleta)} />
             </div>
+          )}
+          {wylegList.length > 0 && (
+            <button className="btn btn-ghost btn-block" style={{ marginBottom: 8 }} onClick={() => {
+              const headers = ["Data nałożenia","Data wylęgu","Dostawca","Nr partii","Nałożono jaj","Niezapłodnione","Niezapl %","Zamarłe","Zamarłe %","Zapłodnione %","Odpad","Nie wyklute","Nie wyklute %","Pisklęta zdrowe","Wylęg z nałożenia %","Wylęg z zapłodnionych %","Uwagi"];
+              const rows = wylegList.map((e) => [e.dataNaladu,e.dataWylegu,e.dostawca,e.nrPartii,e.naladu,e.niezaplodnione,e.niezaplPct,e.zamarle,e.zamarlePct,e.zaplPct,e.odpad,e.nieWyklute,e.nieWyklutePct,e.pisklietaZdrowe,e.wylegNaladu,e.wylegZapl,e.uwagi]);
+              downloadCSV([headers, ...rows], `wylegarnia_${filterYear || "wszystkie"}_${todayISO()}.csv`);
+            }}>⬇ Eksportuj wylęgarnię do CSV (Excel)</button>
           )}
           <div className="naklad-list">
             {wylegNaklady.length === 0 && <p className="helper-text">Brak nakładów do wyświetlenia.</p>}
