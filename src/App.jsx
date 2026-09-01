@@ -615,11 +615,29 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({
-    date: todayISO(), kuryZywe: "", kogutyZywe: "", upadkiKury: "", upadkiKoguty: "",
+    date: todayISO(), upadkiKury: "", upadkiKoguty: "",
     jajaOgolem: "", jajaWyleg: "", wagaJaja: "", paszaKury: "", paszaKog: "", woda: "",
     tempKurnik: "", tempMagazJaj: "", wagaKury: "", wagaKog: "", suplement: "", notatki: "",
   });
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const lastEntry = useMemo(() => {
+    if (!entries || !entries.length) return null;
+    return [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
+  }, [entries]);
+
+  // poprzedni wpis (przed aktualną datą) — źródło stanu stada
+  const prevEntry = useMemo(() => {
+    if (!entries || !entries.length) return null;
+    const before = entries.filter((e) => e.date < form.date).sort((a, b) => (a.date < b.date ? 1 : -1));
+    return before[0] || null;
+  }, [entries, form.date]);
+
+  // stan stada liczony automatycznie
+  const prevKury = prevEntry ? (Number(prevEntry.kuryZywe) || flock.hens) : flock.hens;
+  const prevKog  = prevEntry ? (Number(prevEntry.kogutyZywe) || flock.roosters) : flock.roosters;
+  const kuryZywe   = Math.max(0, prevKury - (Number(form.upadkiKury) || 0));
+  const kogutyZywe = Math.max(0, prevKog  - (Number(form.upadkiKoguty) || 0));
 
   const priorDeaths = useMemo(() => (entries || [])
     .filter((e) => e.date < form.date)
@@ -627,24 +645,19 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
 
   const totalStart = flock.hens + flock.roosters;
   const cumMortality = round(pct(priorDeaths + (Number(form.upadkiKury) || 0) + (Number(form.upadkiKoguty) || 0), totalStart), 2);
-  const layPct = (form.jajaOgolem !== "" && form.kuryZywe !== "") ? round(pct(Number(form.jajaOgolem), Number(form.kuryZywe)), 1) : null;
+  const layPct = (form.jajaOgolem !== "" && kuryZywe > 0) ? round(pct(Number(form.jajaOgolem), kuryZywe), 1) : null;
   const hatchEggPct = round(pct(Number(form.jajaWyleg), Number(form.jajaOgolem)), 1);
-  const doseKury = round((Number(form.paszaKury) * 1000) / (Number(form.kuryZywe) || 1), 1);
-  const doseKog = round((Number(form.paszaKog) * 1000) / (Number(form.kogutyZywe) || 1), 1);
+  const doseKury = round((Number(form.paszaKury) * 1000) / (kuryZywe || 1), 1);
+  const doseKog = round((Number(form.paszaKog) * 1000) / (kogutyZywe || 1), 1);
   const waterFeed = round(Number(form.woda) / ((Number(form.paszaKury) || 0) + (Number(form.paszaKog) || 0) || 1), 2);
   const tydz = weeksBetween(flock.start, form.date);
-
-  const lastEntry = useMemo(() => {
-    if (!entries || !entries.length) return null;
-    return [...entries].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))[0];
-  }, [entries]);
 
   const canNext = step < STEPS.length - 1;
   const canPrev = step > 0;
 
   const submit = async () => {
     setSaving(true); setError("");
-    const err = await addDzienneEntry(flock.id, { ...form, tydzZycia: tydz, cumMortality, layPct, hatchEggPct, doseKury, doseKog, waterFeed });
+    const err = await addDzienneEntry(flock.id, { ...form, kuryZywe, kogutyZywe, tydzZycia: tydz, cumMortality, layPct, hatchEggPct, doseKury, doseKog, waterFeed });
     setSaving(false);
     if (err) { setError("Błąd zapisu: " + err.message); return; }
     onSave();
@@ -671,10 +684,12 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
             )}
             <Field label="Data"><input type="date" className="input" value={form.date} onChange={(e) => set("date")(e.target.value)} /></Field>
             <div className="grid-2">
-              <Field label="Kury żywe"><NumInput value={form.kuryZywe} onChange={set("kuryZywe")} /></Field>
-              <Field label="Koguty żywe"><NumInput value={form.kogutyZywe} onChange={set("kogutyZywe")} /></Field>
               <Field label="Upadki kury"><NumInput value={form.upadkiKury} onChange={set("upadkiKury")} /></Field>
               <Field label="Upadki koguty"><NumInput value={form.upadkiKoguty} onChange={set("upadkiKoguty")} /></Field>
+            </div>
+            <div className="calc-grid" style={{marginTop:6}}>
+              <Stat label="Kury żywe (auto)" value={kuryZywe} />
+              <Stat label="Koguty żywe (auto)" value={kogutyZywe} />
             </div>
             <div className="calc-row">Upadki % skum.: <b>{fmt(cumMortality, "%")}</b></div>
           </>
