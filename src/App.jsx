@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
 } from "recharts";
 import { supabase } from "./supabaseClient";
 
@@ -534,6 +535,10 @@ function AdminRoleSelect({ onPick, onBack }) {
         <button className="role-card" onClick={() => onPick("owner")}>
           <span className="role-icon">📊</span>
           <span className="role-text"><span className="role-name">Panel zarządczy</span><span className="role-desc">Podgląd, eksport danych</span></span>
+        </button>
+        <button className="role-card" onClick={() => onPick("dashboard")}>
+          <span className="role-icon">📈</span>
+          <span className="role-text"><span className="role-name">Dashboard</span><span className="role-desc">Wykresy i analizy — wylęgi, nieśność, temperatura</span></span>
         </button>
         <button className="role-card" onClick={() => onPick("manage")}>
           <span className="role-icon">🏗</span>
@@ -1653,6 +1658,154 @@ function OwnerDashboard({ store, farms, onBack }) {
 }
 
 /* ============================== APP ROOT ============================== */
+/* ============================== DASHBOARD ============================== */
+function DashboardView({ store, farms, onBack }) {
+  const currentYear = String(new Date().getFullYear());
+  const [year, setYear] = useState(currentYear);
+
+  const yearOptions = useMemo(() => {
+    const s = new Set();
+    store.wylegarnia.forEach((e) => { const y = (e.dataNaladu || "").slice(0, 4); if (/^\d{4}$/.test(y)) s.add(y); });
+    Object.values(store.dzienne).flat().forEach((e) => { const y = (e.date || "").slice(0, 4); if (/^\d{4}$/.test(y)) s.add(y); });
+    return ["Wszystkie", ...Array.from(s).sort((a, b) => b - a)];
+  }, [store]);
+
+  const filterYear = year === "Wszystkie" ? null : year;
+
+  const groupByMonth = (arr, dateKey, fn) => {
+    const g = {};
+    arr.forEach((e) => {
+      const d = e[dateKey] || "";
+      if (filterYear && !d.startsWith(filterYear)) return;
+      const m = d.slice(0, 7);
+      if (!m || !/^\d{4}-\d{2}$/.test(m)) return;
+      if (!g[m]) g[m] = [];
+      g[m].push(e);
+    });
+    return Object.entries(g).sort(([a], [b]) => (a < b ? -1 : 1)).map(([m, items]) => ({
+      month: m,
+      label: new Date(m + "-15").toLocaleDateString("pl-PL", { month: "short", year: "2-digit" }),
+      ...fn(items),
+    }));
+  };
+
+  const wylegMonthly = useMemo(() => groupByMonth(store.wylegarnia, "dataNaladu", (items) => {
+    const rateItems = items.filter((e) => e.wylegNaladu != null);
+    return {
+      avgWyleg: rateItems.length ? round(rateItems.reduce((s, e) => s + e.wylegNaladu, 0) / rateItems.length, 1) : null,
+      piskleta: items.reduce((s, e) => s + (Number(e.pisklietaZdrowe) || 0), 0),
+      naladu: items.reduce((s, e) => s + (Number(e.naladu) || 0), 0),
+    };
+  }), [store.wylegarnia, year]);
+
+  const tempMonthly = useMemo(() => groupByMonth(store.tempZarodka, "dataNaladu", (items) => {
+    const valid = items.filter((e) => e.avg != null);
+    return { avgTemp: valid.length ? round(valid.reduce((s, e) => s + e.avg, 0) / valid.length, 2) : null };
+  }), [store.tempZarodka, year]);
+
+  const allDzienne = useMemo(() => Object.values(store.dzienne || {}).flat(), [store.dzienne]);
+
+  const layMonthly = useMemo(() => groupByMonth(allDzienne, "date", (items) => {
+    const valid = items.filter((e) => e.layPct != null && e.layPct > 0);
+    return { avgLay: valid.length ? round(valid.reduce((s, e) => s + e.layPct, 0) / valid.length, 1) : null };
+  }), [allDzienne, year]);
+
+  const kpi = useMemo(() => {
+    const wyleg = store.wylegarnia.filter((e) => !filterYear || (e.dataNaladu || "").startsWith(filterYear));
+    const totalNaladu = wyleg.reduce((s, e) => s + (Number(e.naladu) || 0), 0);
+    const totalPiskleta = wyleg.reduce((s, e) => s + (Number(e.pisklietaZdrowe) || 0), 0);
+    const rates = wyleg.map((e) => e.wylegNaladu).filter((v) => v != null);
+    const avgWyleg = rates.length ? round(rates.reduce((a, b) => a + b, 0) / rates.length, 1) : null;
+    const lays = allDzienne.filter((e) => !filterYear || (e.date || "").startsWith(filterYear)).filter((e) => e.layPct != null && e.layPct > 0).map((e) => e.layPct);
+    const avgLay = lays.length ? round(lays.reduce((a, b) => a + b, 0) / lays.length, 1) : null;
+    return { totalNaladu, totalPiskleta, avgWyleg, avgLay };
+  }, [store, allDzienne, year]);
+
+  const AMBER = "#C97C2E", RED = "#A63D30", GREEN = "#4F7A52", BLUE = "#3B6E8C";
+  const ttStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--text)" };
+
+  const ChartCard = ({ title, children }) => (
+    <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: "16px", marginBottom: 14 }}>
+      <div style={{ fontFamily: "'Oswald',sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 14, color: "var(--text)" }}>{title}</div>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="screen">
+      <TopBar title="Dashboard" subtitle="Wykresy i analizy" onBack={onBack} />
+      <div style={{ marginBottom: 16 }}>
+        <Field label="Rok"><Select value={year} onChange={setYear} options={yearOptions} /></Field>
+      </div>
+
+      <div className="calc-grid" style={{ marginBottom: 16 }}>
+        <Stat label="Jaj nałożonych" value={(kpi.totalNaladu).toLocaleString("pl")} />
+        <Stat label="Piskląt łącznie" value={(kpi.totalPiskleta).toLocaleString("pl")} />
+        <Stat label="Śr. wylęg" value={fmt(kpi.avgWyleg, "%")} tone={kpi.avgWyleg > 80 ? "good" : kpi.avgWyleg > 65 ? "watch" : "alert"} />
+        <Stat label="Śr. nieśność" value={fmt(kpi.avgLay, "%")} tone={kpi.avgLay > 85 ? "good" : kpi.avgLay > 70 ? "watch" : "alert"} />
+      </div>
+
+      <ChartCard title="Wylęg z nałożenia % — miesięcznie">
+        {wylegMonthly.length === 0 ? <p className="helper-text">Brak danych</p> : (
+          <ResponsiveContainer width="100%" height={190}>
+            <LineChart data={wylegMonthly} margin={{ top: 4, right: 12, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
+              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11, fill: "var(--text-muted)" }} unit="%" />
+              <Tooltip contentStyle={ttStyle} formatter={(v) => [`${v}%`, "Wylęg"]} />
+              <Line type="monotone" dataKey="avgWyleg" stroke={AMBER} strokeWidth={2.5} dot={{ r: 4, fill: AMBER, strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+
+      <ChartCard title="Pisklęta — miesięcznie">
+        {wylegMonthly.length === 0 ? <p className="helper-text">Brak danych</p> : (
+          <ResponsiveContainer width="100%" height={170}>
+            <BarChart data={wylegMonthly} margin={{ top: 4, right: 12, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
+              <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} tickFormatter={(v) => v >= 1000 ? `${Math.round(v / 1000)}k` : v} />
+              <Tooltip contentStyle={ttStyle} formatter={(v) => [v.toLocaleString("pl"), "Piskląt"]} />
+              <Bar dataKey="piskleta" fill={GREEN} radius={[4, 4, 0, 0]} maxBarSize={44} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+
+      <ChartCard title="Temperatura zarodka °F — średnia miesięczna">
+        {tempMonthly.filter((m) => m.avgTemp).length === 0 ? <p className="helper-text">Brak danych</p> : (
+          <ResponsiveContainer width="100%" height={200}>
+            <LineChart data={tempMonthly} margin={{ top: 4, right: 36, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
+              <YAxis domain={[98.5, 101]} tick={{ fontSize: 11, fill: "var(--text-muted)" }} unit="°F" />
+              <Tooltip contentStyle={ttStyle} formatter={(v) => [`${v}°F`, "Temp. śr."]} />
+              <ReferenceLine y={99} stroke={RED} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: "99°", position: "right", fontSize: 10, fill: RED }} />
+              <ReferenceLine y={100.5} stroke={RED} strokeDasharray="4 3" strokeOpacity={0.7} label={{ value: "100.5°", position: "right", fontSize: 10, fill: RED }} />
+              <Line type="monotone" dataKey="avgTemp" stroke={BLUE} strokeWidth={2.5} dot={{ r: 4, fill: BLUE, strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+
+      <ChartCard title="Nieśność % — średnia miesięczna">
+        {layMonthly.filter((m) => m.avgLay).length === 0 ? <p className="helper-text">Brak danych</p> : (
+          <ResponsiveContainer width="100%" height={190}>
+            <LineChart data={layMonthly} margin={{ top: 4, right: 12, left: -24, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
+              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11, fill: "var(--text-muted)" }} unit="%" />
+              <Tooltip contentStyle={ttStyle} formatter={(v) => [`${v}%`, "Nieśność"]} />
+              <Line type="monotone" dataKey="avgLay" stroke={GREEN} strokeWidth={2.5} dot={{ r: 4, fill: GREEN, strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+    </div>
+  );
+}
+
 export default function App() {
   const { session, profile, authReady, logout, recovery, clearRecovery } = useAuth();
   const { farms, store, ready, reload } = useSupabaseData(session);
@@ -1693,6 +1846,8 @@ export default function App() {
     body = <OwnerDashboard store={store} farms={farms} onBack={backToRoleMenu} />;
   } else if (screen === "manage") {
     body = <FarmManager farms={farms} store={store} reload={reload} onBack={backToRoleMenu} />;
+  } else if (screen === "dashboard") {
+    body = <DashboardView store={store} farms={farms} onBack={backToRoleMenu} />;
   }
 
   return (
