@@ -618,11 +618,19 @@ function KurnikGrid({ farms, statusMap, selected, onSelect }) {
 /* ============================== WPIS DZIENNY ============================== */
 const STEPS = ["Stado", "Produkcja jaj", "Pasza i woda", "Środowisko"];
 
-function DailyEntryWizard({ flock, entries, onSave, onBack }) {
+function DailyEntryWizard({ flock, entries, onSave, onBack, initialEntry }) {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
+  const n = (v) => (v === null || v === undefined ? "" : String(v));
+  const [form, setForm] = useState(initialEntry ? {
+    date: initialEntry.date, upadkiKury: n(initialEntry.upadkiKury), upadkiKoguty: n(initialEntry.upadkiKoguty),
+    jajaOgolem: n(initialEntry.jajaOgolem), jajaWyleg: n(initialEntry.jajaWyleg), wagaJaja: n(initialEntry.wagaJaja),
+    paszaKury: n(initialEntry.paszaKury), paszaKog: n(initialEntry.paszaKog), woda: n(initialEntry.woda),
+    tempKurnik: n(initialEntry.tempKurnik), tempMagazJaj: n(initialEntry.tempMagazJaj),
+    wagaKury: n(initialEntry.wagaKury), wagaKog: n(initialEntry.wagaKog),
+    suplement: initialEntry.suplement || "", notatki: initialEntry.notatki || "",
+  } : {
     date: todayISO(), upadkiKury: "", upadkiKoguty: "",
     jajaOgolem: "", jajaWyleg: "", wagaJaja: "", paszaKury: "", paszaKog: "", woda: "",
     tempKurnik: "", tempMagazJaj: "", wagaKury: "", wagaKog: "", suplement: "", notatki: "",
@@ -690,7 +698,8 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
                 </div>
               </div>
             )}
-            <Field label="Data"><input type="date" className="input" value={form.date} onChange={(e) => set("date")(e.target.value)} /></Field>
+            <Field label="Data"><input type="date" className="input" value={form.date} onChange={(e) => set("date")(e.target.value)} disabled={!!initialEntry} style={initialEntry ? {opacity:0.6} : {}} /></Field>
+            {initialEntry && <p className="helper-text" style={{marginTop:0, textAlign:"left", color:"var(--accent)"}}>✏ Edytujesz wpis z {initialEntry.date}</p>}
             <div className="grid-2">
               <Field label="Upadki kury"><NumInput value={form.upadkiKury} onChange={set("upadkiKury")} /></Field>
               <Field label="Upadki koguty"><NumInput value={form.upadkiKoguty} onChange={set("upadkiKoguty")} /></Field>
@@ -1198,7 +1207,7 @@ function FarmManager({ farms, store, reload, onBack }) {
   if (viewingId) {
     const all = getAllKurniki(farms);
     const k = all.find((kk) => kk.id === viewingId);
-    return <KurnikDetail kurnik={k} entries={store?.dzienne[viewingId] || []} onBack={() => setViewingId(null)} onDelete={async (date) => { await deleteDzienneEntry(viewingId, date); reload(); }} />;
+    return <KurnikDetail kurnik={k} entries={store?.dzienne[viewingId] || []} onBack={() => setViewingId(null)} onDelete={async (date) => { await deleteDzienneEntry(viewingId, date); reload(); }} onEditSave={reload} />;
   }
 
   return (
@@ -1253,7 +1262,8 @@ function FarmManager({ farms, store, reload, onBack }) {
 }
 
 /* ============================== SZCZEGÓŁY KURNIKA ============================== */
-function KurnikDetail({ kurnik, entries, onBack, onDelete }) {
+function KurnikDetail({ kurnik, entries, onBack, onDelete, onEditSave }) {
+  const [editingEntry, setEditingEntry] = useState(null);
   const sortedDesc = [...entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   const sortedAsc = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
   const chartData = sortedAsc.map((e) => ({ date: e.date.slice(5), Nieśność: e.layPct, Upadki: e.cumMortality }));
@@ -1262,6 +1272,18 @@ function KurnikDetail({ kurnik, entries, onBack, onDelete }) {
   const lastLayEntry = lastWithLay(sortedAsc);
   const bestLayEntry = bestLay(entries);
   const currentTone = lastLayEntry?.layPct > 65 ? "good" : lastLayEntry?.layPct > 50 ? "watch" : "alert";
+
+  if (editingEntry) {
+    return (
+      <DailyEntryWizard
+        flock={kurnik}
+        entries={entries}
+        initialEntry={editingEntry}
+        onBack={() => setEditingEntry(null)}
+        onSave={async () => { await onEditSave?.(); setEditingEntry(null); }}
+      />
+    );
+  }
 
   return (
     <div className="screen">
@@ -1313,7 +1335,10 @@ function KurnikDetail({ kurnik, entries, onBack, onDelete }) {
             <div className="entry-card-header">
               <span className="entry-date">{e.date}</span>
               <span className="entry-week">tydz. życia {e.tydzZycia}</span>
-              {onDelete && <ConfirmButton className="mini-btn mini-btn-danger" label="✕" confirmLabel="Usuń wpis?" onConfirm={() => onDelete(e.date)} />}
+              <span style={{display:"flex",gap:4}}>
+                <button className="mini-btn" onClick={() => setEditingEntry(e)} title="Edytuj wpis">✎</button>
+                {onDelete && <ConfirmButton className="mini-btn mini-btn-danger" label="✕" confirmLabel="Usuń wpis?" onConfirm={() => onDelete(e.date)} />}
+              </span>
             </div>
             <div className="entry-grid">
               <div><span className="entry-label">Nieśność</span><span className="entry-value">{fmt(e.layPct, "%")}</span></div>
@@ -1661,7 +1686,7 @@ function OwnerDashboard({ store, farms, onBack }) {
 
   if (detailId) {
     const k = allKurniki.find((kk) => kk.id === detailId);
-    return <KurnikDetail kurnik={k} entries={store.dzienne[detailId] || []} onBack={() => setDetailId(null)} onDelete={async (date) => { await deleteDzienneEntry(detailId, date); reload(); }} />;
+    return <KurnikDetail kurnik={k} entries={store.dzienne[detailId] || []} onBack={() => setDetailId(null)} onDelete={async (date) => { await deleteDzienneEntry(detailId, date); reload(); }} onEditSave={reload} />;
   }
   if (showHatchery) return <HatcheryDataView store={store} farms={farms} onBack={() => setShowHatchery(false)} />;
 
