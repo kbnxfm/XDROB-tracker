@@ -430,8 +430,7 @@ function AuthGate() {
   return (
     <div className="screen role-screen">
       <div className="brand">
-        <div className="brand-mark">XD</div>
-        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Monitoring ferm i wylęgarni</div></div>
+        <img src="/logo.png" alt="XDROB" className="brand-logo" />
       </div>
       <div className="auth-card">
         {mode !== "forgot" && (
@@ -480,8 +479,7 @@ function ResetPasswordScreen({ onDone }) {
   return (
     <div className="screen role-screen">
       <div className="brand">
-        <div className="brand-mark">XD</div>
-        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Ustaw nowe hasło</div></div>
+        <img src="/logo.png" alt="XDROB" className="brand-logo" />
       </div>
       <div className="auth-card">
         <Field label="Nowe hasło"><input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="min. 6 znaków" /></Field>
@@ -498,8 +496,7 @@ function PendingApproval({ email, onLogout }) {
   return (
     <div className="screen role-screen">
       <div className="brand">
-        <div className="brand-mark">XD</div>
-        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Monitoring ferm i wylęgarni</div></div>
+        <img src="/logo.png" alt="XDROB" className="brand-logo" />
       </div>
       <div className="auth-card">
         <div className="field-label">Konto oczekuje na zatwierdzenie</div>
@@ -517,8 +514,7 @@ function ModeSelect({ onPick, user, onLogout }) {
   return (
     <div className="screen role-screen">
       <div className="brand">
-        <div className="brand-mark">XD</div>
-        <div><div className="brand-title">XDROB Tracker</div><div className="brand-sub">Monitoring ferm i wylęgarni</div></div>
+        <img src="/logo.png" alt="XDROB" className="brand-logo" />
       </div>
       <div className="session-bar"><span>Zalogowano jako <b>{user}</b></span><button className="logout-link" onClick={onLogout}>Wyloguj</button></div>
       <div className="role-list">
@@ -1790,7 +1786,7 @@ function DashboardView({ store, farms, onBack }) {
     return { totalNaladu, totalPiskleta, avgWyleg, avgLay };
   }, [store, allDzienne, year]);
 
-  const AMBER = "#C97C2E", RED = "#A63D30", GREEN = "#4F7A52", BLUE = "#3B6E8C";
+  const AMBER = "#F5B800", RED = "#D44F3E", GREEN = "#3A8A4C", BLUE = "#3B6E8C";
   const ttStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12, color: "var(--text)" };
 
   const ChartCard = ({ title, children }) => (
@@ -1924,22 +1920,22 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap');
         .app-root {
-          --bg: #FAF6EF; --surface: #FFFFFF; --surface-2: #F2EBDD;
-          --accent: #C97C2E; --accent-2: #A63D30; --success: #4F7A52;
-          --text: #2B2420; --text-muted: #8B7F6E; --border: #E6DCC8;
-          --text-faint: #B8AFA0;
-          --shadow-sm: 0 1px 4px rgba(43,36,32,0.07), 0 0 0 1px rgba(43,36,32,0.04);
-          --shadow-md: 0 3px 10px rgba(43,36,32,0.10), 0 0 0 1px rgba(43,36,32,0.05);
-          --accent-light: rgba(201,124,46,0.12);
-          --success-light: rgba(79,122,82,0.12);
-          --alert-light: rgba(166,61,48,0.12);
+          --bg: #F6F6F6; --surface: #FFFFFF; --surface-2: #EEEEEE;
+          --accent: #F5B800; --accent-2: #D44F3E; --success: #3A8A4C;
+          --text: #2D2D2D; --text-muted: #717171; --border: #E0E0E0;
+          --text-faint: #B0B0B0;
+          --shadow-sm: 0 1px 4px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+          --shadow-md: 0 3px 10px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.05);
+          --accent-light: rgba(245,184,0,0.13);
+          --success-light: rgba(58,138,76,0.12);
+          --alert-light: rgba(212,79,62,0.12);
           background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
           min-height: 100vh; width: 100%; padding-bottom: 32px; box-sizing: border-box;
         }
         .app-shell { max-width: 480px; margin: 0 auto; }
         .screen { padding: 20px 16px 8px; }
-        .brand { display: flex; align-items: center; gap: 12px; padding: 24px 4px 8px; }
-        .brand-mark { width: 48px; height: 48px; border-radius: 10px; background: linear-gradient(145deg, #D98F3A, #B86E22); color: #fff; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px; box-shadow: var(--shadow-md); }
+        .brand { display: flex; align-items: center; justify-content: center; padding: 28px 4px 12px; }
+        .brand-logo { height: 44px; width: auto; display: block; }
         .brand-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 22px; letter-spacing: 0.3px; }
         .brand-sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
         .role-list { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
@@ -1961,10 +1957,10 @@ export default function App() {
         .farm-group-title { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
         .egg-tray { display: flex; flex-wrap: wrap; gap: 8px; }
         .egg-cup { width: 76px; height: 78px; border-radius: 6px 6px 40% 40%; background: var(--surface); border: 1.5px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; cursor: pointer; color: var(--text); padding: 4px; }
-        .egg-cup-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(201,124,46,0.35); }
-        .egg-cup-ok { background: rgba(79,122,82,0.12); border-color: var(--success); }
-        .egg-cup-watch { background: rgba(201,124,46,0.12); border-color: var(--accent); }
-        .egg-cup-alert { background: rgba(166,61,48,0.14); border-color: var(--accent-2); }
+        .egg-cup-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(245,184,0,0.35); }
+        .egg-cup-ok { background: rgba(58,138,76,0.12); border-color: var(--success); }
+        .egg-cup-watch { background: rgba(245,184,0,0.13); border-color: var(--accent); }
+        .egg-cup-alert { background: rgba(212,79,62,0.12); border-color: var(--accent-2); }
         .egg-cup-label { font-size: 11px; font-weight: 600; text-align: center; line-height: 1.2; }
         .egg-cup-metric { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-muted); }
         .helper-text { color: var(--text-muted); font-size: 13px; margin-top: 14px; text-align: center; }
@@ -2121,7 +2117,8 @@ export default function App() {
         @media (min-width: 860px) {
           .app-shell { max-width: 1120px; }
           .screen { padding: 36px 48px 24px; }
-          .brand { padding: 8px 4px 24px; }
+          .brand { padding: 12px 4px 28px; }
+          .brand-logo { height: 58px; }
           .brand-title { font-size: 28px; }
           .brand-sub { font-size: 14px; }
 
