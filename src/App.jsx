@@ -57,65 +57,127 @@ const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Num
 const printFarmReport = (farm, dzienne) => {
   const kurniki = farm.kurniki || [];
   const generated = new Date().toLocaleDateString("pl-PL", { day: "2-digit", month: "long", year: "numeric" });
+  const layColor = (p) => p == null ? "#888" : p >= 70 ? "#2a7a3b" : p >= 50 ? "#c47a00" : "#c0392b";
 
-  const kurnikSection = (k) => {
+  const buildSummary = (k) => {
     const sorted = [...(dzienne[k.id] || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
-    if (!sorted.length) return `<div class="kurnik-block"><div class="kurnik-title">${k.name} — brak wpisów</div></div>`;
-    const totalEggs = sorted.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0);
-    const best = sorted.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
+    if (!sorted.length) return null;
+    const withLay = sorted.filter((e) => e.layPct != null);
+    const avgLay = withLay.length ? Math.round(withLay.reduce((s, e) => s + e.layPct, 0) / withLay.length * 10) / 10 : null;
+    const bestEntry = withLay.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
     const last = sorted[sorted.length - 1];
-    const rows = sorted.map((e) => `<tr>
-      <td>${e.date}</td><td>${e.tydzZycia ?? "—"}</td><td>${e.kuryZywe ?? "—"}</td>
-      <td>${e.jajaOgolem ?? "—"}</td><td>${e.layPct != null ? e.layPct + "%" : "—"}</td>
-      <td>${e.jajaWyleg ?? "—"}</td><td>${e.upadkiKury ?? "—"}</td><td>${e.upadkiKoguty ?? "—"}</td>
-      <td>${e.cumMortality != null ? e.cumMortality + "%" : "—"}</td><td>${e.paszaKury != null ? e.paszaKury + " kg" : "—"}</td>
-    </tr>`).join("");
-    return `
-      <div class="kurnik-block">
-        <div class="kurnik-title">${k.name} <span class="kurnik-meta">· linia: ${k.line || "—"} · wstawiono: ${k.start || "—"}</span></div>
-        <div class="kpis">
-          <div class="kpi"><div class="kpi-label">Jaja łącznie</div><div class="kpi-value">${totalEggs.toLocaleString("pl")}</div></div>
-          <div class="kpi"><div class="kpi-label">Najlepsza nieśność</div><div class="kpi-value">${best?.layPct ?? "—"}%</div><div class="kpi-sub">${best?.date ?? ""}</div></div>
-          <div class="kpi"><div class="kpi-label">Ostatnia nieśność</div><div class="kpi-value">${last?.layPct ?? "—"}%</div><div class="kpi-sub">${last?.date ?? ""}</div></div>
-          <div class="kpi"><div class="kpi-label">Wpisów</div><div class="kpi-value">${sorted.length}</div></div>
-        </div>
-        <table>
-          <thead><tr><th>Data</th><th>Tydz.</th><th>Kury żywe</th><th>Jaja ogółem</th><th>Nieśność %</th><th>Jaja wylęg.</th><th>Upadki K</th><th>Upadki Kog.</th><th>Śmiert. %</th><th>Pasza kury</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
+    const totalEggs = sorted.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0);
+    const totalWyleg = sorted.reduce((s, e) => s + (Number(e.jajaWyleg) || 0), 0);
+    const totalUpadkiK = sorted.reduce((s, e) => s + (Number(e.upadkiKury) || 0), 0);
+    const initHens = k.hens || 0;
+    const mortalityPct = initHens > 0 ? Math.round((totalUpadkiK / initHens) * 1000) / 10 : null;
+    const weeks = [];
+    let i = 0;
+    while (i < sorted.length) {
+      const chunk = sorted.slice(i, i + 7);
+      const cl = chunk.filter((e) => e.layPct != null);
+      weeks.push(cl.length ? Math.round(cl.reduce((s, e) => s + e.layPct, 0) / cl.length * 10) / 10 : null);
+      i += 7;
+    }
+    const alertCount = weeks.filter((w) => w != null && w < 65).length;
+    const hasAlert = alertCount > 0 || (last?.layPct != null && last.layPct < 50);
+    return { k, sorted, avgLay, bestEntry, last, totalEggs, totalWyleg, totalUpadkiK, mortalityPct, weeks, alertCount, hasAlert, initHens };
   };
+
+  const summaries = kurniki.map(buildSummary).filter(Boolean);
+  const grandEggs = summaries.reduce((s, x) => s + x.totalEggs, 0);
+  const grandWyleg = summaries.reduce((s, x) => s + x.totalWyleg, 0);
+  const allAvg = summaries.map((x) => x.avgLay).filter((v) => v != null);
+  const farmAvg = allAvg.length ? Math.round(allAvg.reduce((a, b) => a + b, 0) / allAvg.length * 10) / 10 : null;
+  const totalAlerts = summaries.filter((x) => x.hasAlert).length;
+
+  const miniChart = (weeks) => {
+    const bars = weeks.map((w) =>
+      `<div title="${w != null ? w + "%" : "—"}" style="flex:1;min-width:4px;height:${Math.round((Math.max(w || 0, 0)) / 100 * 26)}px;background:${layColor(w)};border-radius:2px 2px 0 0;align-self:flex-end"></div>`
+    ).join("");
+    return `<div style="display:flex;gap:2px;align-items:flex-end;height:26px">${bars}</div>`;
+  };
+
+  const summaryRows = summaries.map((x) => `
+    <tr style="${x.hasAlert ? "background:#fff8f8" : ""}">
+      <td style="text-align:left;font-weight:600">${x.k.name}</td>
+      <td>${x.k.line || "—"}</td>
+      <td style="white-space:nowrap">${x.sorted[0].date} – ${x.last.date}</td>
+      <td>${x.sorted.length}</td>
+      <td style="color:${layColor(x.avgLay)};font-weight:700">${x.avgLay != null ? x.avgLay + "%" : "—"}</td>
+      <td style="color:${layColor(x.bestEntry?.layPct)}">${x.bestEntry?.layPct != null ? x.bestEntry.layPct + "%" : "—"}</td>
+      <td style="color:${layColor(x.last?.layPct)};font-weight:600">${x.last?.layPct != null ? x.last.layPct + "%" : "—"}</td>
+      <td>${miniChart(x.weeks)}</td>
+      <td>${x.totalEggs.toLocaleString("pl")}</td>
+      <td>${x.totalWyleg ? x.totalWyleg.toLocaleString("pl") : "—"}</td>
+      <td style="${x.mortalityPct != null && x.mortalityPct >= 8 ? "color:#c0392b;font-weight:700" : ""}">${x.mortalityPct != null ? x.mortalityPct + "%" : "—"}</td>
+      <td>${x.hasAlert ? `<span style="color:#c0392b">⚠ ${x.alertCount} tygodni</span>` : `<span style="color:#2a7a3b">✓ OK</span>`}</td>
+    </tr>`).join("");
+
+  const alertSection = summaries.filter((x) => x.hasAlert).length > 0
+    ? `<div class="section-title" style="color:#c0392b;margin-top:20px">⚠ Kurniki wymagające uwagi</div>
+       <table>
+         <thead><tr><th style="text-align:left">Kurnik</th><th>Ostatnia nieśność</th><th>Śr. nieśność</th><th>Tygodnie poniżej 65%</th><th>Upadki kur</th></tr></thead>
+         <tbody>${summaries.filter((x) => x.hasAlert).map((x) => `
+           <tr style="background:#fff8f8">
+             <td style="text-align:left;font-weight:600">${x.k.name}</td>
+             <td style="color:${layColor(x.last?.layPct)};font-weight:700">${x.last?.layPct != null ? x.last.layPct + "%" : "—"}</td>
+             <td style="color:${layColor(x.avgLay)}">${x.avgLay != null ? x.avgLay + "%" : "—"}</td>
+             <td>${x.alertCount}</td>
+             <td>${x.totalUpadkiK}</td>
+           </tr>`).join("")}
+         </tbody>
+       </table>`
+    : `<div class="section-title" style="color:#2a7a3b;margin-top:16px">✓ Wszystkie kurniki w normie</div>`;
 
   const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8">
   <title>Raport fermy — ${farm.name}</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 24px 28px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #F5B800; padding-bottom: 12px; margin-bottom: 18px; }
-    .logo { font-size: 26px; font-weight: 900; letter-spacing: -1px; }
-    .logo span { color: #F5B800; }
-    .meta { text-align: right; font-size: 10px; color: #666; }
-    .meta b { font-size: 16px; color: #1a1a1a; display: block; margin-bottom: 2px; }
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 12px; }
-    .kpi { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; border-top: 3px solid #F5B800; }
-    .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 3px; }
-    .kpi-value { font-size: 18px; font-weight: 700; }
-    .kpi-sub { font-size: 9px; color: #aaa; margin-top: 1px; }
-    .kurnik-block { margin-bottom: 28px; page-break-inside: avoid; }
-    .kurnik-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px solid #F5B800; }
-    .kurnik-meta { font-size: 10px; font-weight: 400; color: #888; }
-    table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    th { background: #2d2d2d; color: #fff; padding: 5px 4px; text-align: center; font-size: 9px; font-weight: 600; }
-    td { padding: 4px; text-align: center; border-bottom: 1px solid #f0f0f0; }
-    tr:nth-child(even) td { background: #fafafa; }
-    .footer { margin-top: 20px; font-size: 9px; color: #bbb; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
-    @media print { body { padding: 12px 16px; } @page { margin: 1cm; size: A4 landscape; } .kurnik-block { page-break-inside: avoid; } }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px}
+    .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #F5B800;padding-bottom:14px;margin-bottom:20px}
+    .logo{font-size:28px;font-weight:900;letter-spacing:-1px}
+    .logo span{color:#F5B800}
+    .meta{text-align:right;font-size:10px;color:#666;line-height:1.7}
+    .meta b{font-size:16px;color:#1a1a1a;display:block}
+    .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}
+    .kpi{border:1px solid #e8e8e8;border-radius:8px;padding:12px 14px;border-top:3px solid #F5B800}
+    .kpi.good{border-top-color:#2a7a3b}.kpi.warn{border-top-color:#c47a00}.kpi.bad{border-top-color:#c0392b}
+    .kpi-label{font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:#999;margin-bottom:5px}
+    .kpi-value{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1}
+    .kpi-sub{font-size:9px;color:#bbb;margin-top:3px}
+    .section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#888;margin:16px 0 8px;padding-bottom:4px;border-bottom:1px solid #eee}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#2d2d2d;color:#fff;padding:7px 8px;text-align:center;font-size:9px;font-weight:600}
+    td{padding:7px 8px;text-align:center;border-bottom:1px solid #f0f0f0}
+    .footer{margin-top:24px;font-size:9px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:10px}
+    @media print{body{padding:14px 18px}@page{margin:1cm;size:A4 landscape}}
   </style></head><body>
   <div class="header">
     <div class="logo"><span>X</span>DROB</div>
-    <div class="meta"><b>${farm.name}</b>Raport wszystkich kurników &nbsp;·&nbsp; ${generated}</div>
+    <div class="meta"><b>Ferma: ${farm.name}</b>Raport zbiorczy &nbsp;·&nbsp; ${generated}</div>
   </div>
-  ${kurniki.map((k) => kurnikSection(k)).join("")}
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">Kurniki z danymi</div><div class="kpi-value">${summaries.length} / ${kurniki.length}</div><div class="kpi-sub">aktywne</div></div>
+    <div class="kpi"><div class="kpi-label">Jaja ogółem</div><div class="kpi-value">${grandEggs.toLocaleString("pl")}</div><div class="kpi-sub">wszystkie kurniki</div></div>
+    <div class="kpi"><div class="kpi-label">Jaja wylęgowe</div><div class="kpi-value">${grandWyleg.toLocaleString("pl")}</div><div class="kpi-sub">łącznie</div></div>
+    <div class="kpi ${farmAvg != null && farmAvg >= 70 ? "good" : farmAvg != null && farmAvg >= 50 ? "warn" : "bad"}">
+      <div class="kpi-label">Śr. nieśność</div><div class="kpi-value">${farmAvg != null ? farmAvg + "%" : "—"}</div><div class="kpi-sub">średnia z kurników</div>
+    </div>
+    <div class="kpi ${totalAlerts === 0 ? "good" : "bad"}">
+      <div class="kpi-label">Alerty</div><div class="kpi-value">${totalAlerts}</div><div class="kpi-sub">${totalAlerts === 0 ? "wszystko OK" : "kurniki poniżej normy"}</div>
+    </div>
+  </div>
+  <div class="section-title">Zestawienie kurników</div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">Kurnik</th><th>Linia</th><th>Okres</th><th>Dni</th>
+      <th>Śr. nieśność</th><th>Najlepsza</th><th>Ostatnia</th><th>Trend (tyg.)</th>
+      <th>Jaja</th><th>Jaja wylęg.</th><th>Śmiertelność</th><th>Status</th>
+    </tr></thead>
+    <tbody>${summaryRows}</tbody>
+  </table>
+  ${alertSection}
   <div class="footer">XDROB Tracker &nbsp;·&nbsp; xdrob-tracker.vercel.app &nbsp;·&nbsp; ${generated}</div>
   <script>window.onload = () => window.print();<\/script>
   </body></html>`;
@@ -126,74 +188,145 @@ const printFarmReport = (farm, dzienne) => {
 };
 
 const printKurnikReport = (kurnik, entries) => {
+  if (!entries.length) return;
   const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const generated = new Date().toLocaleDateString("pl-PL", { day: "2-digit", month: "long", year: "numeric" });
+  const layColor = (p) => p == null ? "#888" : p >= 70 ? "#2a7a3b" : p >= 50 ? "#c47a00" : "#c0392b";
+  const layBg   = (p) => p == null ? "" : p >= 70 ? "#edfaf1" : p >= 50 ? "#fff8e1" : "#fdf0f0";
+
+  // — Summary KPIs —
   const totalEggs = sorted.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0);
   const totalWyleg = sorted.reduce((s, e) => s + (Number(e.jajaWyleg) || 0), 0);
-  const bestLay = sorted.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
+  const totalUpadkiK = sorted.reduce((s, e) => s + (Number(e.upadkiKury) || 0), 0);
+  const totalUpadkiKog = sorted.reduce((s, e) => s + (Number(e.upadkiKoguty) || 0), 0);
+  const withLay = sorted.filter((e) => e.layPct != null);
+  const avgLay = withLay.length ? Math.round(withLay.reduce((s, e) => s + e.layPct, 0) / withLay.length * 10) / 10 : null;
+  const bestEntry = withLay.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
   const last = sorted[sorted.length - 1];
-  const generated = new Date().toLocaleDateString("pl-PL", { day: "2-digit", month: "long", year: "numeric" });
+  const initHens = kurnik.hens || 0;
+  const mortalityPct = initHens > 0 ? Math.round((totalUpadkiK / initHens) * 1000) / 10 : null;
 
-  const row = (e) => `
-    <tr>
-      <td>${e.date}</td>
-      <td>${e.tydzZycia ?? "—"}</td>
-      <td>${e.kuryZywe ?? "—"}</td>
-      <td>${e.jajaOgolem ?? "—"}</td>
-      <td>${e.layPct != null ? e.layPct + "%" : "—"}</td>
-      <td>${e.jajaWyleg ?? "—"}</td>
-      <td>${e.hatchEggPct != null ? e.hatchEggPct + "%" : "—"}</td>
-      <td>${e.upadkiKury ?? "—"}</td>
-      <td>${e.upadkiKoguty ?? "—"}</td>
-      <td>${e.cumMortality != null ? e.cumMortality + "%" : "—"}</td>
-      <td>${e.paszaKury != null ? e.paszaKury + " kg" : "—"}</td>
-      <td>${e.wagaJaja != null ? e.wagaJaja + " g" : "—"}</td>
+  // — Weekly aggregates —
+  const weeks = [];
+  let wi = 0;
+  while (wi < sorted.length) {
+    const chunk = sorted.slice(wi, wi + 7);
+    const cl = chunk.filter((e) => e.layPct != null);
+    const wAvg = cl.length ? Math.round(cl.reduce((s, e) => s + e.layPct, 0) / cl.length * 10) / 10 : null;
+    weeks.push({
+      n: Math.floor(wi / 7) + 1,
+      start: chunk[0].date,
+      end: chunk[chunk.length - 1].date,
+      days: chunk.length,
+      avgLay: wAvg,
+      totalEggs: chunk.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0),
+      totalWyleg: chunk.reduce((s, e) => s + (Number(e.jajaWyleg) || 0), 0),
+      upadkiK: chunk.reduce((s, e) => s + (Number(e.upadkiKury) || 0), 0),
+      upadkiKog: chunk.reduce((s, e) => s + (Number(e.upadkiKoguty) || 0), 0),
+    });
+    wi += 7;
+  }
+
+  // — Alerts —
+  const alerts = [];
+  weeks.forEach((w, idx) => {
+    if (w.avgLay != null && w.avgLay < 50) alerts.push(`Tydzień ${w.n} (${w.start}): nieśność krytyczna — ${w.avgLay}%`);
+    else if (w.avgLay != null && w.avgLay < 65) alerts.push(`Tydzień ${w.n} (${w.start}): nieśność poniżej normy — ${w.avgLay}%`);
+    if (idx > 0 && w.avgLay != null && weeks[idx - 1].avgLay != null) {
+      const drop = weeks[idx - 1].avgLay - w.avgLay;
+      if (drop >= 10) alerts.push(`Tydzień ${w.n} (${w.start}): spadek nieśności o ${Math.round(drop * 10) / 10}% vs poprzedni tydzień`);
+    }
+    if (w.upadkiK >= 5) alerts.push(`Tydzień ${w.n} (${w.start}): ${w.upadkiK} upadków kur`);
+  });
+
+  // — Visual bar for each row —
+  const bar = (pct) => `<div style="display:flex;align-items:center;gap:6px">
+    <div style="flex:1;height:9px;background:#f0f0f0;border-radius:5px;overflow:hidden">
+      <div style="width:${Math.min(pct || 0, 100)}%;height:100%;background:${layColor(pct)};border-radius:5px"></div>
+    </div>
+    <span style="font-size:9px;color:${layColor(pct)};font-weight:700;min-width:32px">${pct != null ? pct + "%" : "—"}</span>
+  </div>`;
+
+  const weekRows = weeks.map((w, idx) => {
+    const prevDrop = idx > 0 && w.avgLay != null && weeks[idx - 1].avgLay != null && (weeks[idx - 1].avgLay - w.avgLay) >= 10;
+    const isAlert = (w.avgLay != null && w.avgLay < 65) || prevDrop || w.upadkiK >= 5;
+    return `<tr style="background:${layBg(w.avgLay)}">
+      <td style="font-weight:700">Tydz. ${w.n}</td>
+      <td style="white-space:nowrap;font-size:9px;color:#888">${w.start}${w.start !== w.end ? " – " + w.end : ""}</td>
+      <td>${w.days}</td>
+      <td style="min-width:140px">${bar(w.avgLay)}</td>
+      <td>${w.totalEggs.toLocaleString("pl")}</td>
+      <td>${w.totalWyleg || "—"}</td>
+      <td style="${w.upadkiK >= 5 ? "color:#c0392b;font-weight:700" : ""}">${w.upadkiK || "—"}</td>
+      <td>${w.upadkiKog || "—"}</td>
+      <td>${isAlert ? "⚠" : "✓"}</td>
     </tr>`;
+  }).join("");
+
+  const alertsHtml = alerts.length
+    ? `<div class="section-title" style="color:#c0392b">⚠ Odchylenia od normy — ${alerts.length} zdarzeń</div>
+       <div class="alerts-box">${alerts.map((a) => `<div class="alert-row">${a}</div>`).join("")}</div>`
+    : `<div class="ok-bar">✓ Brak istotnych odchyleń w analizowanym okresie</div>`;
 
   const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8">
   <title>Raport — ${kurnik.farmName} / ${kurnik.name}</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 24px 28px; }
-    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #F5B800; padding-bottom: 12px; margin-bottom: 18px; }
-    .logo { font-size: 26px; font-weight: 900; letter-spacing: -1px; }
-    .logo span { color: #F5B800; }
-    .meta { text-align: right; font-size: 10px; color: #666; }
-    .meta b { font-size: 14px; color: #1a1a1a; display: block; margin-bottom: 2px; }
-    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
-    .kpi { border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 12px; border-top: 3px solid #F5B800; }
-    .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 4px; }
-    .kpi-value { font-size: 20px; font-weight: 700; color: #1a1a1a; }
-    .kpi-sub { font-size: 9px; color: #aaa; margin-top: 2px; }
-    .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin: 16px 0 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
-    table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    th { background: #2d2d2d; color: #fff; padding: 6px 5px; text-align: center; font-size: 9px; font-weight: 600; white-space: nowrap; }
-    td { padding: 5px 5px; text-align: center; border-bottom: 1px solid #f0f0f0; }
-    tr:nth-child(even) td { background: #fafafa; }
-    .footer { margin-top: 20px; font-size: 9px; color: #bbb; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
-    @media print { body { padding: 12px 16px; } @page { margin: 1cm; size: A4 landscape; } }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;padding:28px 32px}
+    .header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #F5B800;padding-bottom:14px;margin-bottom:20px}
+    .logo{font-size:28px;font-weight:900;letter-spacing:-1px}
+    .logo span{color:#F5B800}
+    .meta{text-align:right;font-size:10px;color:#666;line-height:1.7}
+    .meta b{font-size:15px;color:#1a1a1a;display:block}
+    .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px}
+    .kpi{border:1px solid #e8e8e8;border-radius:8px;padding:12px 14px;border-top:3px solid #F5B800}
+    .kpi.good{border-top-color:#2a7a3b}.kpi.warn{border-top-color:#c47a00}.kpi.bad{border-top-color:#c0392b}
+    .kpi-label{font-size:9px;text-transform:uppercase;letter-spacing:0.6px;color:#999;margin-bottom:5px}
+    .kpi-value{font-size:20px;font-weight:800;color:#1a1a1a;line-height:1}
+    .kpi-sub{font-size:9px;color:#bbb;margin-top:3px}
+    .section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#888;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #eee}
+    .alerts-box{background:#fff8f8;border:1px solid #f5c6c6;border-radius:6px;padding:10px 14px;margin-bottom:16px}
+    .alert-row{font-size:10px;color:#c0392b;padding:3px 0}
+    .alert-row::before{content:"→ "}
+    .ok-bar{background:#f0faf4;border:1px solid #b2dfcb;border-radius:6px;padding:9px 14px;font-size:10px;color:#2a7a3b;margin-bottom:16px}
+    table{width:100%;border-collapse:collapse;font-size:10px}
+    th{background:#2d2d2d;color:#fff;padding:7px 8px;text-align:center;font-size:9px;font-weight:600}
+    td{padding:7px 8px;text-align:center;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+    .footer{margin-top:24px;font-size:9px;color:#bbb;text-align:center;border-top:1px solid #eee;padding-top:10px}
+    @media print{body{padding:14px 18px}@page{margin:1cm;size:A4 landscape}}
   </style></head><body>
   <div class="header">
     <div class="logo"><span>X</span>DROB</div>
     <div class="meta">
       <b>${kurnik.farmName} — ${kurnik.name}</b>
-      Linia: ${kurnik.line || "—"} &nbsp;·&nbsp; Wstawiono: ${kurnik.start || "—"}<br>
-      Wygenerowano: ${generated}
+      Linia: ${kurnik.line || "—"} &nbsp;·&nbsp; Wstawiono: ${kurnik.start || "—"} &nbsp;·&nbsp; Kury startowe: ${initHens || "—"}<br>
+      Okres: ${sorted[0].date} – ${last.date} &nbsp;·&nbsp; Wygenerowano: ${generated}
     </div>
   </div>
   <div class="kpis">
     <div class="kpi"><div class="kpi-label">Jaja ogółem</div><div class="kpi-value">${totalEggs.toLocaleString("pl")}</div><div class="kpi-sub">przez cały okres</div></div>
     <div class="kpi"><div class="kpi-label">Jaja wylęgowe</div><div class="kpi-value">${totalWyleg.toLocaleString("pl")}</div><div class="kpi-sub">łącznie</div></div>
-    <div class="kpi"><div class="kpi-label">Najlepsza nieśność</div><div class="kpi-value">${bestLay?.layPct ?? "—"}%</div><div class="kpi-sub">${bestLay?.date ?? ""}</div></div>
-    <div class="kpi"><div class="kpi-label">Ostatnia nieśność</div><div class="kpi-value">${last?.layPct ?? "—"}%</div><div class="kpi-sub">${last?.date ?? ""}</div></div>
+    <div class="kpi ${avgLay != null && avgLay >= 70 ? "good" : avgLay != null && avgLay >= 50 ? "warn" : "bad"}">
+      <div class="kpi-label">Śr. nieśność</div><div class="kpi-value">${avgLay != null ? avgLay + "%" : "—"}</div>
+      <div class="kpi-sub">rekord: ${bestEntry?.layPct ?? "—"}% · ${bestEntry?.date ?? ""}</div>
+    </div>
+    <div class="kpi ${mortalityPct != null && mortalityPct < 3 ? "good" : mortalityPct != null && mortalityPct < 8 ? "warn" : "bad"}">
+      <div class="kpi-label">Śmiertelność kur</div><div class="kpi-value">${mortalityPct != null ? mortalityPct + "%" : "—"}</div>
+      <div class="kpi-sub">${totalUpadkiK} K + ${totalUpadkiKog} Kog.</div>
+    </div>
+    <div class="kpi ${alerts.length === 0 ? "good" : "bad"}">
+      <div class="kpi-label">Odchylenia</div><div class="kpi-value">${alerts.length}</div>
+      <div class="kpi-sub">${alerts.length === 0 ? "brak" : "tygodnie poza normą"}</div>
+    </div>
   </div>
-  <div class="section-title">Dane dzienne — ${sorted.length} wpisów</div>
+  ${alertsHtml}
+  <div class="section-title">Wyniki tygodniowe — ${weeks.length} tyg. · ${sorted.length} wpisów dziennych</div>
   <table>
     <thead><tr>
-      <th>Data</th><th>Tydz.</th><th>Kury żywe</th><th>Jaja ogółem</th><th>Nieśność %</th>
-      <th>Jaja wylęg.</th><th>Hatch egg %</th><th>Upadki K</th><th>Upadki Kog.</th>
-      <th>Śmiert. %</th><th>Pasza kury</th><th>Waga jaja</th>
+      <th>Tydzień</th><th>Zakres dat</th><th>Dni</th><th style="min-width:160px;text-align:left;padding-left:10px">Nieśność</th>
+      <th>Jaja</th><th>Wylęg.</th><th>Upadki K</th><th>Upadki Kog.</th><th></th>
     </tr></thead>
-    <tbody>${sorted.map(row).join("")}</tbody>
+    <tbody>${weekRows}</tbody>
   </table>
   <div class="footer">XDROB Tracker &nbsp;·&nbsp; xdrob-tracker.vercel.app &nbsp;·&nbsp; ${generated}</div>
   <script>window.onload = () => window.print();<\/script>
@@ -352,21 +485,37 @@ function useSupabaseData(session) {
   return { farms, store: { dzienne, wylegarnia, tempZarodka, utrataMasy }, ready, reload };
 }
 
+/* ============================== GOOGLE SHEETS WEBHOOK ============================== */
+// Wklej tu URL wdrożenia z Apps Script (Wdrożenie → Zarządzaj wdrożeniami → skopiuj URL)
+const SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycby_Bc3nTzABO8LmMXc6u8S-JIUmHAeMofPc62KDc55yqcw0fsoOFdkVMsMTcpmbeffy1A/exec";
+
+async function pushToSheets(type, payload) {
+  if (!SHEETS_WEBHOOK_URL || SHEETS_WEBHOOK_URL.startsWith("WKLEJ")) return;
+  try {
+    await fetch(SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, ...payload }),
+    });
+  } catch (_) {
+    // push do Sheets jest "fire and forget" — błąd tu nie blokuje zapisu w apce
+  }
+}
+
 /* ============================== MUTACJE (zapis do Supabase) ============================== */
 async function addDzienneEntry(kurnikId, entry) {
-  const { error } = await supabase.from("dzienne_entries").upsert(
-    {
-      kurnik_id: kurnikId, date: entry.date, tydz_zycia: entry.tydzZycia,
-      kury_zywe: numOrNull(entry.kuryZywe), koguty_zywe: numOrNull(entry.kogutyZywe),
-      upadki_kury: numOrNull(entry.upadkiKury) ?? 0, upadki_koguty: numOrNull(entry.upadkiKoguty) ?? 0,
-      cum_mortality: entry.cumMortality, jaja_ogolem: numOrNull(entry.jajaOgolem), jaja_wyleg: numOrNull(entry.jajaWyleg),
-      hatch_egg_pct: entry.hatchEggPct, lay_pct: entry.layPct, waga_jaja: numOrNull(entry.wagaJaja),
-      pasza_kury: numOrNull(entry.paszaKury), pasza_kog: numOrNull(entry.paszaKog), dose_kury: entry.doseKury, dose_kog: entry.doseKog,
-      woda: numOrNull(entry.woda), water_feed: entry.waterFeed, temp_kurnik: numOrNull(entry.tempKurnik), temp_magaz_jaj: numOrNull(entry.tempMagazJaj),
-      waga_kury: numOrNull(entry.wagaKury), waga_kog: numOrNull(entry.wagaKog), suplement: entry.suplement || null, notatki: entry.notatki || null,
-    },
-    { onConflict: "kurnik_id,date" }
-  );
+  const payload = {
+    kurnik_id: kurnikId, date: entry.date, tydz_zycia: entry.tydzZycia,
+    kury_zywe: numOrNull(entry.kuryZywe), koguty_zywe: numOrNull(entry.kogutyZywe),
+    upadki_kury: numOrNull(entry.upadkiKury) ?? 0, upadki_koguty: numOrNull(entry.upadkiKoguty) ?? 0,
+    cum_mortality: entry.cumMortality, jaja_ogolem: numOrNull(entry.jajaOgolem), jaja_wyleg: numOrNull(entry.jajaWyleg),
+    hatch_egg_pct: entry.hatchEggPct, lay_pct: entry.layPct, waga_jaja: numOrNull(entry.wagaJaja),
+    pasza_kury: numOrNull(entry.paszaKury), pasza_kog: numOrNull(entry.paszaKog), dose_kury: entry.doseKury, dose_kog: entry.doseKog,
+    woda: numOrNull(entry.woda), water_feed: entry.waterFeed, temp_kurnik: numOrNull(entry.tempKurnik), temp_magaz_jaj: numOrNull(entry.tempMagazJaj),
+    waga_kury: numOrNull(entry.wagaKury), waga_kog: numOrNull(entry.wagaKog), suplement: entry.suplement || null, notatki: entry.notatki || null,
+  };
+  const { error } = await supabase.from("dzienne_entries").upsert(payload, { onConflict: "kurnik_id,date" });
+  if (!error) pushToSheets("dzienne", payload);
   return error;
 }
 
@@ -376,7 +525,7 @@ async function deleteDzienneEntry(kurnikId, date) {
 }
 
 async function addWylegarniaEntry(entry) {
-  const { error } = await supabase.from("wylegarnia").insert({
+  const payload = {
     data_naladu: entry.dataNaladu, data_wylegu: entry.dataWylegu || null, dostawca: entry.dostawca || null,
     nr_partii: entry.nrPartii || null, dostawa_jaj: numOrNull(entry.dostawaJaj), strata_magaz: numOrNull(entry.strataMagaz) ?? 0,
     naladu: entry.naladu, niezaplodnione: numOrNull(entry.niezaplodnione), niezapl_pct: entry.niezaplPct,
@@ -384,7 +533,9 @@ async function addWylegarniaEntry(entry) {
     odpad: numOrNull(entry.odpad) ?? 0, nie_wyklute: numOrNull(entry.nieWyklute) ?? 0, nie_wyklute_pct: entry.nieWyklutePct,
     pisklieta_zdrowe: numOrNull(entry.pisklietaZdrowe), wyleg_naladu: entry.wylegNaladu, wyleg_zapl: entry.wylegZapl,
     uwagi: entry.uwagi || null,
-  });
+  };
+  const { error } = await supabase.from("wylegarnia").insert(payload);
+  if (!error) pushToSheets("wylegarnia", payload);
   return error;
 }
 
@@ -1877,6 +2028,15 @@ function OwnerDashboard({ store, farms, onBack, reload }) {
       <button className="kurnik-detail-link" onClick={() => setShowHatchery(true)}>🥚 Zobacz pełne dane wylęgarni</button>
       <div className="section-title">Fermy</div>
       <p className="helper-text">Stuknij kurnik, aby zobaczyć pełną historię wpisów.</p>
+      <a
+        href="https://docs.google.com/spreadsheets/d/1u8W5meM22qitP33NeZjnB1rSA0ijhMn36jIhspBWzO4/export?format=xlsx"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="btn btn-block"
+        style={{ marginBottom: 12, background: "#1e7e34", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textDecoration: "none", borderRadius: 10, padding: "12px 0", fontWeight: 600, fontSize: 15 }}
+      >
+        📊 Pobierz Excel z danymi (monitoring)
+      </a>
       {farms.map((farm) => (
         <button key={farm.id} className="btn btn-ghost btn-block" style={{ marginBottom: 6 }} onClick={() => printFarmReport(farm, store.dzienne)}>
           📄 Raport PDF — {farm.name}
