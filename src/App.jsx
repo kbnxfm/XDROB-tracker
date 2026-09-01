@@ -22,12 +22,20 @@ const weeksBetween = (start, date) => {
 };
 const round = (n, d = 1) => (Number.isFinite(n) ? Number(n.toFixed(d)) : null);
 const pct = (num, den) => (den ? (num / den) * 100 : null);
-const fmt = (v, suffix = "") => (v === null || v === undefined || Number.isNaN(v) ? "—" : `${v}${suffix}`);
+const fmt = (v, suffix = "") => {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  const s = Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+  return `${s}${suffix}`;
+};
 const lastWithLay = (list) => {
-  for (let i = list.length - 1; i >= 0; i--) {
-    if (list[i].layPct !== null && list[i].layPct !== undefined) return list[i];
+  const sorted = [...list].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i].layPct !== null && sorted[i].layPct !== undefined && sorted[i].layPct !== 0) return sorted[i];
   }
-  return list[list.length - 1] || null;
+  // fallback: return most-recent entry even if layPct is 0/null
+  return sorted[0] || null;
 };
 const bestLay = (list) => {
   let best = null;
@@ -316,11 +324,15 @@ function Select({ value, onChange, options }) {
     </select>
   );
 }
-function Stat({ label, value, tone = "neutral" }) {
+function Stat({ label, value, tone = "neutral", onClick, active = false }) {
   return (
-    <div className={`stat stat-${tone}`}>
+    <div
+      className={`stat stat-${tone}${onClick ? " stat-clickable" : ""}${active ? " stat-active-filter" : ""}`}
+      onClick={onClick}
+      style={onClick ? { cursor: "pointer" } : undefined}
+    >
       <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
+      <div className="stat-label">{label}{active ? " ✕" : ""}</div>
     </div>
   );
 }
@@ -596,7 +608,7 @@ function DailyEntryWizard({ flock, entries, onSave, onBack }) {
 
   const totalStart = flock.hens + flock.roosters;
   const cumMortality = round(pct(priorDeaths + (Number(form.upadkiKury) || 0) + (Number(form.upadkiKoguty) || 0), totalStart), 2);
-  const layPct = round(pct(Number(form.jajaOgolem), Number(form.kuryZywe)), 1);
+  const layPct = (form.jajaOgolem !== "" && form.kuryZywe !== "") ? round(pct(Number(form.jajaOgolem), Number(form.kuryZywe)), 1) : null;
   const hatchEggPct = round(pct(Number(form.jajaWyleg), Number(form.jajaOgolem)), 1);
   const doseKury = round((Number(form.paszaKury) * 1000) / (Number(form.kuryZywe) || 1), 1);
   const doseKog = round((Number(form.paszaKog) * 1000) / (Number(form.kogutyZywe) || 1), 1);
@@ -989,7 +1001,10 @@ function UtrataMasyForm({ list, options, onSaved }) {
           {lastForSupplier.uwagi && <div className="last-state-note">Uwagi: {lastForSupplier.uwagi}</div>}
         </div>
       )}
-      <Field label="Waga dz. 0 (kg/150szt)"><NumInput value={f.waga0} onChange={(v) => setF((s) => ({ ...s, waga0: v }))} /></Field>
+      <Field label="Waga dz. 0 (kg/150szt) — waga początkowa jaj"><NumInput value={f.waga0} onChange={(v) => setF((s) => ({ ...s, waga0: v }))} /></Field>
+      <div className="checkpoint-row" style={{ fontWeight: 600, fontSize: "11px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+        <div></div><div>Pozostała waga (kg/150szt)</div><div>Nr AL</div><div style={{ textAlign: "right" }}>Utrata %</div>
+      </div>
       {rows.map((r) => (
         <div className="checkpoint-row" key={r.day}>
           <div className="checkpoint-day">Dz. {r.day}</div>
@@ -1250,10 +1265,24 @@ function KurnikDetail({ kurnik, entries, onBack }) {
 }
 
 /* ============================== PODGLĄD WYLĘGARNI ============================== */
-function HatcheryDataView({ store, onBack }) {
+function HatcheryDataView({ store, farms, onBack }) {
   const [tab, setTab] = useState("wyleg");
+  const [filterFarm, setFilterFarm] = useState("");
   const [filterDostawca, setFilterDostawca] = useState("");
+  const [filterYear, setFilterYear] = useState(String(new Date().getFullYear()));
   const [expandedNaklad, setExpandedNaklad] = useState(null);
+  const [filterOutOfRange, setFilterOutOfRange] = useState(false);
+
+  const allKurniki = useMemo(() => getAllKurniki(farms || []), [farms]);
+  const farmList = useMemo(() => (farms || []).map((f) => f.name), [farms]);
+
+  // kurniki belonging to selected farm
+  const farmKurniki = useMemo(() => {
+    if (!filterFarm) return null;
+    const farm = (farms || []).find((f) => f.name === filterFarm);
+    if (!farm) return null;
+    return (farm.kurniki || []).map((k) => k.name);
+  }, [farms, filterFarm]);
 
   const dostawcy = useMemo(() => {
     const set = new Set();
@@ -1261,9 +1290,26 @@ function HatcheryDataView({ store, onBack }) {
     return Array.from(set).sort();
   }, [store]);
 
-  const wylegList = useMemo(() => { const l = [...store.wylegarnia].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : -1)); return filterDostawca ? l.filter((e) => e.dostawca === filterDostawca) : l; }, [store, filterDostawca]);
-  const tempList = useMemo(() => { const l = [...store.tempZarodka].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : -1)); return filterDostawca ? l.filter((e) => e.dostawca === filterDostawca) : l; }, [store, filterDostawca]);
-  const masaList = useMemo(() => { const l = [...store.utrataMasy].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : -1)); return filterDostawca ? l.filter((e) => e.dostawca === filterDostawca) : l; }, [store, filterDostawca]);
+  const yearOptions = useMemo(() => {
+    const years = new Set();
+    [...store.wylegarnia, ...store.tempZarodka, ...store.utrataMasy].forEach((e) => {
+      const y = (e.dataNaladu || "").slice(0, 4);
+      if (y && /^\d{4}$/.test(y)) years.add(y);
+    });
+    return ["Wszystkie", ...Array.from(years).sort((a, b) => b - a)];
+  }, [store]);
+
+  const applyFilters = (list) => {
+    let l = [...list].sort((a, b) => (a.dataNaladu < b.dataNaladu ? 1 : -1));
+    if (filterYear && filterYear !== "Wszystkie") l = l.filter((e) => (e.dataNaladu || "").startsWith(filterYear));
+    if (farmKurniki) l = l.filter((e) => farmKurniki.includes(e.dostawca));
+    if (filterDostawca) l = l.filter((e) => e.dostawca === filterDostawca);
+    return l;
+  };
+
+  const wylegList = useMemo(() => applyFilters(store.wylegarnia), [store, farmKurniki, filterDostawca, filterYear]);
+  const tempList = useMemo(() => applyFilters(store.tempZarodka), [store, farmKurniki, filterDostawca, filterYear]);
+  const masaList = useMemo(() => applyFilters(store.utrataMasy), [store, farmKurniki, filterDostawca, filterYear]);
 
   // Grupowanie po "nakładzie" — jedna data nałożenia = jedna partia produkcyjna,
   // złożona z jaj od kilku dostawców/kurników wstawionych do klujnika razem.
@@ -1308,7 +1354,8 @@ function HatcheryDataView({ store, onBack }) {
     const zapl = wylegList.map((e) => e.zaplPct).filter((v) => v !== null && v !== undefined);
     const wylegN = wylegList.map((e) => e.wylegNaladu).filter((v) => v !== null && v !== undefined);
     const totalPiskleta = wylegList.reduce((s, e) => s + (Number(e.pisklietaZdrowe) || 0), 0);
-    return { naklady: wylegNaklady.length, count: wylegList.length, avgZapl: zapl.length ? round(zapl.reduce((a, b) => a + b, 0) / zapl.length, 1) : null, avgWyleg: wylegN.length ? round(wylegN.reduce((a, b) => a + b, 0) / wylegN.length, 1) : null, totalPiskleta };
+    const totalNaladu = wylegList.reduce((s, e) => s + (Number(e.naladu) || 0), 0);
+    return { naklady: wylegNaklady.length, count: wylegList.length, avgZapl: zapl.length ? round(zapl.reduce((a, b) => a + b, 0) / zapl.length, 1) : null, avgWyleg: wylegN.length ? round(wylegN.reduce((a, b) => a + b, 0) / wylegN.length, 1) : null, totalPiskleta, totalNaladu };
   }, [wylegList, wylegNaklady]);
 
   const tempStats = useMemo(() => {
@@ -1332,8 +1379,15 @@ function HatcheryDataView({ store, onBack }) {
         <button className={`tab ${tab === "temp" ? "tab-active" : ""}`} onClick={() => setTab("temp")}>Temp. zarodka</button>
         <button className={`tab ${tab === "masa" ? "tab-active" : ""}`} onClick={() => setTab("masa")}>Utrata masy</button>
       </div>
-      <Field label="Filtruj wg dostawcy / stada"><Select value={filterDostawca} onChange={setFilterDostawca} options={dostawcy} /></Field>
-      {filterDostawca && <button className="mini-btn-text" onClick={() => setFilterDostawca("")}>✕ wyczyść filtr</button>}
+      <div className="grid-2">
+        <Field label="Rok"><Select value={filterYear} onChange={setFilterYear} options={yearOptions} /></Field>
+        <Field label="Filtruj wg fermy"><Select value={filterFarm} onChange={(v) => { setFilterFarm(v); setFilterDostawca(""); }} options={farmList} /></Field>
+      </div>
+      <div className="grid-2">
+        <Field label="Filtruj wg stada / dostawcy"><Select value={filterDostawca} onChange={setFilterDostawca} options={dostawcy} /></Field>
+        <div />
+      </div>
+      {(filterFarm || filterDostawca || (filterYear && filterYear !== "Wszystkie")) && <button className="mini-btn-text" onClick={() => { setFilterFarm(""); setFilterDostawca(""); setFilterYear("Wszystkie"); }}>✕ wyczyść filtry</button>}
 
       {tab === "wyleg" && (
         <>
@@ -1342,6 +1396,7 @@ function HatcheryDataView({ store, onBack }) {
               <Stat label="Nakładów" value={wylegStats.naklady} />
               <Stat label="Partii łącznie" value={wylegStats.count} />
               <Stat label="Śr. wylęg z nał." value={fmt(wylegStats.avgWyleg, "%")} tone={wylegStats.avgWyleg > 80 ? "good" : wylegStats.avgWyleg > 65 ? "watch" : "alert"} />
+              <Stat label="Jaj nałożonych" value={fmt(wylegStats.totalNaladu)} />
               <Stat label="Pisklęta łącznie" value={fmt(wylegStats.totalPiskleta)} />
             </div>
           )}
@@ -1399,10 +1454,11 @@ function HatcheryDataView({ store, onBack }) {
 
       {tab === "temp" && (
         <>
-          {tempStats && <div className="calc-grid"><Stat label="Partii" value={tempStats.count} /><Stat label="Śr. °F ogółem" value={fmt(tempStats.avgOverall)} tone={tempStats.avgOverall > 99 && tempStats.avgOverall < 100.5 ? "good" : "watch"} /><Stat label="Poza normą" value={tempStats.outOfRange} tone={tempStats.outOfRange > 0 ? "alert" : "good"} /></div>}
+          {tempStats && <div className="calc-grid"><Stat label="Partii" value={tempStats.count} /><Stat label="Śr. °F ogółem" value={fmt(tempStats.avgOverall)} tone={tempStats.avgOverall > 99 && tempStats.avgOverall < 100.5 ? "good" : "watch"} /><Stat label="Poza normą" value={tempStats.outOfRange} tone={tempStats.outOfRange > 0 ? "alert" : "good"} onClick={() => setFilterOutOfRange((v) => !v)} active={filterOutOfRange} /></div>}
+          {filterOutOfRange && <p className="helper-text" style={{color:"var(--accent-2)",marginBottom:4}}>Filtr aktywny: tylko partie poza normą (kliknij "Poza normą" aby wyczyścić)</p>}
           <div className="entry-list">
             {tempList.length === 0 && <p className="helper-text">Brak partii do wyświetlenia.</p>}
-            {tempList.map((e) => {
+            {tempList.filter((e) => !filterOutOfRange || (e.avg !== null && (e.avg < 99 || e.avg > 100.5))).map((e) => {
               const tone = e.avg > 99.5 && e.avg < 100.5 ? "good" : "watch";
               return (
                 <div key={e.id} className="data-card">
@@ -1530,7 +1586,7 @@ function OwnerDashboard({ store, farms, onBack }) {
     const k = allKurniki.find((kk) => kk.id === detailId);
     return <KurnikDetail kurnik={k} entries={store.dzienne[detailId] || []} onBack={() => setDetailId(null)} />;
   }
-  if (showHatchery) return <HatcheryDataView store={store} onBack={() => setShowHatchery(false)} />;
+  if (showHatchery) return <HatcheryDataView store={store} farms={farms} onBack={() => setShowHatchery(false)} />;
 
   return (
     <div className="screen">
@@ -1632,7 +1688,7 @@ export default function App() {
   } else if (screen === "hatchery") {
     body = <HatcheryRole store={store} farms={farms} reload={reload} onBack={backToRoleMenu} />;
   } else if (screen === "hatcheryView") {
-    body = <HatcheryDataView store={store} onBack={backToRoleMenu} />;
+    body = <HatcheryDataView store={store} farms={farms} onBack={backToRoleMenu} />;
   } else if (screen === "owner") {
     body = <OwnerDashboard store={store} farms={farms} onBack={backToRoleMenu} />;
   } else if (screen === "manage") {
@@ -1647,13 +1703,19 @@ export default function App() {
           --bg: #FAF6EF; --surface: #FFFFFF; --surface-2: #F2EBDD;
           --accent: #C97C2E; --accent-2: #A63D30; --success: #4F7A52;
           --text: #2B2420; --text-muted: #8B7F6E; --border: #E6DCC8;
+          --text-faint: #B8AFA0;
+          --shadow-sm: 0 1px 4px rgba(43,36,32,0.07), 0 0 0 1px rgba(43,36,32,0.04);
+          --shadow-md: 0 3px 10px rgba(43,36,32,0.10), 0 0 0 1px rgba(43,36,32,0.05);
+          --accent-light: rgba(201,124,46,0.12);
+          --success-light: rgba(79,122,82,0.12);
+          --alert-light: rgba(166,61,48,0.12);
           background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
           min-height: 100vh; width: 100%; padding-bottom: 32px; box-sizing: border-box;
         }
         .app-shell { max-width: 480px; margin: 0 auto; }
         .screen { padding: 20px 16px 8px; }
         .brand { display: flex; align-items: center; gap: 12px; padding: 24px 4px 8px; }
-        .brand-mark { width: 48px; height: 48px; border-radius: 10px; background: var(--accent); color: var(--text); font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px; }
+        .brand-mark { width: 48px; height: 48px; border-radius: 10px; background: linear-gradient(145deg, #D98F3A, #B86E22); color: #fff; font-family: 'Oswald', sans-serif; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center; letter-spacing: 0.5px; box-shadow: var(--shadow-md); }
         .brand-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 22px; letter-spacing: 0.3px; }
         .brand-sub { color: var(--text-muted); font-size: 13px; margin-top: 2px; }
         .role-list { display: flex; flex-direction: column; gap: 12px; margin-top: 24px; }
@@ -1667,7 +1729,7 @@ export default function App() {
         .session-bar { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-muted); margin: 10px 2px 4px; }
         .session-bar b { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
         .logout-link { background: transparent; border: none; color: var(--accent-2); font-size: 12.5px; font-weight: 600; cursor: pointer; text-decoration: underline; }
-        .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+        .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1.5px solid var(--border); }
         .back-btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); width: 36px; height: 36px; border-radius: 9px; font-size: 16px; cursor: pointer; }
         .topbar-title { font-family: 'Oswald', sans-serif; font-size: 19px; font-weight: 600; }
         .topbar-subtitle { font-size: 12.5px; color: var(--text-muted); }
@@ -1695,8 +1757,8 @@ export default function App() {
         .input:focus { outline: none; border-color: var(--accent); }
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-        .calc-row { background: var(--surface); border: 1px dashed var(--border); border-radius: 9px; padding: 10px 12px; font-size: 13px; color: var(--text-muted); }
-        .calc-row b { color: var(--accent); font-family: 'IBM Plex Mono', monospace; }
+        .calc-row { background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 9px; padding: 10px 12px; font-size: 13px; color: var(--text-muted); }
+        .calc-row b { color: var(--accent); font-family: 'IBM Plex Mono', monospace; font-size: 14px; }
         .wizard-nav { display: flex; gap: 10px; margin-top: 18px; }
         .btn { border: none; border-radius: 10px; padding: 13px 18px; font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14.5px; cursor: pointer; letter-spacing: 0.3px; }
         .btn-primary { background: var(--accent); color: var(--text); flex: 1; }
@@ -1712,13 +1774,19 @@ export default function App() {
         .recent-title { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px; }
         .log-row { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 7px 0; border-bottom: 1px solid var(--surface-2); font-family: 'IBM Plex Mono', monospace; }
         .log-type { color: var(--accent); font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; }
-        .tabs { display: flex; gap: 6px; margin-bottom: 18px; background: var(--surface); padding: 4px; border-radius: 10px; }
-        .tab { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 9px 4px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-        .tab-active { background: var(--accent); color: var(--text); }
+        .tabs { display: flex; gap: 6px; margin-bottom: 18px; background: var(--surface-2); padding: 4px; border-radius: 10px; border: 1px solid var(--border); }
+        .tab { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 9px 4px; border-radius: 7px; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color 0.15s; }
+        .tab-active { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
         .calc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0; }
-        .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
-        .stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
-        .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 12px 12px; position: relative; overflow: hidden; box-shadow: var(--shadow-sm); }
+        .stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--border); border-radius: 10px 10px 0 0; }
+        .stat-good::before { background: var(--success); }
+        .stat-watch::before { background: var(--accent); }
+        .stat-clickable:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); transition: transform 0.15s, box-shadow 0.15s; }
+        .stat-active-filter { outline: 2px solid var(--accent-2); outline-offset: 1px; }
+        .stat-alert::before { background: var(--accent-2); }
+        .stat-value { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 700; line-height: 1.1; }
+        .stat-label { font-size: 10px; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
         .stat-good .stat-value { color: var(--success); }
         .stat-watch .stat-value { color: var(--accent); }
         .stat-alert .stat-value { color: var(--accent-2); }
@@ -1727,8 +1795,9 @@ export default function App() {
         .checkpoint-row { display: grid; grid-template-columns: 52px 1fr 1fr 50px; gap: 8px; align-items: center; }
         .checkpoint-day { font-size: 12px; color: var(--text-muted); font-weight: 600; }
         .checkpoint-loss { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--accent); text-align: right; }
-        .section-title { font-family: 'Oswald', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; margin: 22px 0 10px; }
-        .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 10px; }
+        .section-title { font-family: 'Oswald', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin: 22px 0 10px; display: flex; align-items: center; gap: 10px; }
+        .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+        .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-top: 10px; box-shadow: var(--shadow-sm); }
         .chart-title { font-size: 12.5px; color: var(--text-muted); margin-bottom: 8px; }
         .admin-actions { display: flex; flex-direction: column; gap: 8px; }
         .raw-json { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 12px; font-size: 10.5px; font-family: 'IBM Plex Mono', monospace; color: var(--text-muted); max-height: 260px; overflow: auto; white-space: pre-wrap; word-break: break-word; }
@@ -1757,22 +1826,22 @@ export default function App() {
         .kurnik-add-form { background: var(--surface-2); border-radius: 9px; padding: 10px; display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
         .added-confirm { color: var(--success); font-size: 12.5px; font-weight: 600; text-align: center; }
         .entry-list { display: flex; flex-direction: column; gap: 10px; }
-        .entry-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
-        .entry-card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+        .entry-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; box-shadow: var(--shadow-sm); }
+        .entry-card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
         .entry-date { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
         .entry-week { font-size: 11.5px; color: var(--text-muted); }
-        .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
-        .entry-grid > div { display: flex; justify-content: space-between; gap: 6px; }
-        .entry-label { font-size: 11.5px; color: var(--text-muted); }
-        .entry-value { font-family: 'IBM Plex Mono', monospace; font-size: 12.5px; font-weight: 600; }
+        .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+        .entry-grid > div { display: flex; flex-direction: column; gap: 2px; }
+        .entry-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+        .entry-value { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text); }
         .entry-notes { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
         .naklad-list { display: flex; flex-direction: column; gap: 10px; }
-        .naklad-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+        .naklad-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
         .naklad-header { display: flex; justify-content: space-between; align-items: center; padding: 14px; cursor: pointer; gap: 10px; }
         .naklad-date { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14.5px; }
         .naklad-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
         .naklad-summary { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-        .naklad-pct { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 15px; }
+        .naklad-pct { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 20px; }
         .naklad-pct[data-tone="good"] { color: var(--success); }
         .naklad-pct[data-tone="watch"] { color: var(--accent); }
         .naklad-pct[data-tone="alert"] { color: var(--accent-2); }
@@ -1780,13 +1849,13 @@ export default function App() {
         .naklad-body { border-top: 1px solid var(--border); padding: 10px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
         .entry-card-nested { background: var(--surface-2); }
 
-        .data-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+        .data-card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-sm); }
         .data-card-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
         .data-card-title { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 15px; }
         .data-card-tag { font-size: 11px; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); padding: 3px 8px; border-radius: 20px; white-space: nowrap; }
         .hero-row { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; border-bottom: 1px dashed var(--border); margin-bottom: 12px; }
         .hero-stat { flex-shrink: 0; }
-        .hero-value { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 32px; line-height: 1; }
+        .hero-value { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 38px; line-height: 1; }
         .hero-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; }
         .hero-good .hero-value { color: var(--success); }
         .hero-watch .hero-value { color: var(--accent); }
@@ -1803,7 +1872,7 @@ export default function App() {
         .rank-list { display: flex; flex-direction: column; gap: 6px; }
         .rank-row {
           display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border);
-          border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; width: 100%;
+          border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; width: 100%; box-shadow: var(--shadow-sm);
         }
         .rank-row:active { background: var(--surface-2); }
         .rank-pos { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 13px; color: var(--text-muted); width: 18px; flex-shrink: 0; }
@@ -1811,7 +1880,7 @@ export default function App() {
         .rank-name { font-family: 'Oswald', sans-serif; font-weight: 600; font-size: 14px; }
         .rank-farm { font-size: 11px; color: var(--text-muted); }
         .rank-values { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
-        .rank-current { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 16px; }
+        .rank-current { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 20px; }
         .rank-current.rank-good { color: var(--success); }
         .rank-current.rank-watch { color: var(--accent); }
         .rank-current.rank-alert { color: var(--accent-2); }
@@ -1832,8 +1901,8 @@ export default function App() {
 
           /* Statystyki: 4 w rzędzie zamiast 2 */
           .calc-grid { grid-template-columns: repeat(4, 1fr); gap: 14px; }
-          .stat { padding: 16px; }
-          .stat-value { font-size: 23px; }
+          .stat { padding: 18px 16px 14px; }
+          .stat-value { font-size: 26px; }
 
           /* Siatka kurników i wpisy: więcej miejsca, karty obok siebie */
           .kurnik-groups { gap: 24px; }
