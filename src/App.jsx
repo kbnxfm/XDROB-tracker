@@ -54,6 +54,156 @@ const bestLay = (list) => {
 };
 const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
+const printFarmReport = (farm, dzienne) => {
+  const kurniki = farm.kurniki || [];
+  const generated = new Date().toLocaleDateString("pl-PL", { day: "2-digit", month: "long", year: "numeric" });
+
+  const kurnikSection = (k) => {
+    const sorted = [...(dzienne[k.id] || [])].sort((a, b) => (a.date < b.date ? -1 : 1));
+    if (!sorted.length) return `<div class="kurnik-block"><div class="kurnik-title">${k.name} — brak wpisów</div></div>`;
+    const totalEggs = sorted.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0);
+    const best = sorted.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
+    const last = sorted[sorted.length - 1];
+    const rows = sorted.map((e) => `<tr>
+      <td>${e.date}</td><td>${e.tydzZycia ?? "—"}</td><td>${e.kuryZywe ?? "—"}</td>
+      <td>${e.jajaOgolem ?? "—"}</td><td>${e.layPct != null ? e.layPct + "%" : "—"}</td>
+      <td>${e.jajaWyleg ?? "—"}</td><td>${e.upadkiKury ?? "—"}</td><td>${e.upadkiKoguty ?? "—"}</td>
+      <td>${e.cumMortality != null ? e.cumMortality + "%" : "—"}</td><td>${e.paszaKury != null ? e.paszaKury + " kg" : "—"}</td>
+    </tr>`).join("");
+    return `
+      <div class="kurnik-block">
+        <div class="kurnik-title">${k.name} <span class="kurnik-meta">· linia: ${k.line || "—"} · wstawiono: ${k.start || "—"}</span></div>
+        <div class="kpis">
+          <div class="kpi"><div class="kpi-label">Jaja łącznie</div><div class="kpi-value">${totalEggs.toLocaleString("pl")}</div></div>
+          <div class="kpi"><div class="kpi-label">Najlepsza nieśność</div><div class="kpi-value">${best?.layPct ?? "—"}%</div><div class="kpi-sub">${best?.date ?? ""}</div></div>
+          <div class="kpi"><div class="kpi-label">Ostatnia nieśność</div><div class="kpi-value">${last?.layPct ?? "—"}%</div><div class="kpi-sub">${last?.date ?? ""}</div></div>
+          <div class="kpi"><div class="kpi-label">Wpisów</div><div class="kpi-value">${sorted.length}</div></div>
+        </div>
+        <table>
+          <thead><tr><th>Data</th><th>Tydz.</th><th>Kury żywe</th><th>Jaja ogółem</th><th>Nieśność %</th><th>Jaja wylęg.</th><th>Upadki K</th><th>Upadki Kog.</th><th>Śmiert. %</th><th>Pasza kury</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  };
+
+  const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8">
+  <title>Raport fermy — ${farm.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 24px 28px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #F5B800; padding-bottom: 12px; margin-bottom: 18px; }
+    .logo { font-size: 26px; font-weight: 900; letter-spacing: -1px; }
+    .logo span { color: #F5B800; }
+    .meta { text-align: right; font-size: 10px; color: #666; }
+    .meta b { font-size: 16px; color: #1a1a1a; display: block; margin-bottom: 2px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 12px; }
+    .kpi { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px 10px; border-top: 3px solid #F5B800; }
+    .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 3px; }
+    .kpi-value { font-size: 18px; font-weight: 700; }
+    .kpi-sub { font-size: 9px; color: #aaa; margin-top: 1px; }
+    .kurnik-block { margin-bottom: 28px; page-break-inside: avoid; }
+    .kurnik-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px solid #F5B800; }
+    .kurnik-meta { font-size: 10px; font-weight: 400; color: #888; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    th { background: #2d2d2d; color: #fff; padding: 5px 4px; text-align: center; font-size: 9px; font-weight: 600; }
+    td { padding: 4px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .footer { margin-top: 20px; font-size: 9px; color: #bbb; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+    @media print { body { padding: 12px 16px; } @page { margin: 1cm; size: A4 landscape; } .kurnik-block { page-break-inside: avoid; } }
+  </style></head><body>
+  <div class="header">
+    <div class="logo"><span>X</span>DROB</div>
+    <div class="meta"><b>${farm.name}</b>Raport wszystkich kurników &nbsp;·&nbsp; ${generated}</div>
+  </div>
+  ${kurniki.map((k) => kurnikSection(k)).join("")}
+  <div class="footer">XDROB Tracker &nbsp;·&nbsp; xdrob-tracker.vercel.app &nbsp;·&nbsp; ${generated}</div>
+  <script>window.onload = () => window.print();<\/script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+};
+
+const printKurnikReport = (kurnik, entries) => {
+  const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const totalEggs = sorted.reduce((s, e) => s + (Number(e.jajaOgolem) || 0), 0);
+  const totalWyleg = sorted.reduce((s, e) => s + (Number(e.jajaWyleg) || 0), 0);
+  const bestLay = sorted.reduce((b, e) => (e.layPct > (b?.layPct ?? -1) ? e : b), null);
+  const last = sorted[sorted.length - 1];
+  const generated = new Date().toLocaleDateString("pl-PL", { day: "2-digit", month: "long", year: "numeric" });
+
+  const row = (e) => `
+    <tr>
+      <td>${e.date}</td>
+      <td>${e.tydzZycia ?? "—"}</td>
+      <td>${e.kuryZywe ?? "—"}</td>
+      <td>${e.jajaOgolem ?? "—"}</td>
+      <td>${e.layPct != null ? e.layPct + "%" : "—"}</td>
+      <td>${e.jajaWyleg ?? "—"}</td>
+      <td>${e.hatchEggPct != null ? e.hatchEggPct + "%" : "—"}</td>
+      <td>${e.upadkiKury ?? "—"}</td>
+      <td>${e.upadkiKoguty ?? "—"}</td>
+      <td>${e.cumMortality != null ? e.cumMortality + "%" : "—"}</td>
+      <td>${e.paszaKury != null ? e.paszaKury + " kg" : "—"}</td>
+      <td>${e.wagaJaja != null ? e.wagaJaja + " g" : "—"}</td>
+    </tr>`;
+
+  const html = `<!DOCTYPE html><html lang="pl"><head><meta charset="UTF-8">
+  <title>Raport — ${kurnik.farmName} / ${kurnik.name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; padding: 24px 28px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #F5B800; padding-bottom: 12px; margin-bottom: 18px; }
+    .logo { font-size: 26px; font-weight: 900; letter-spacing: -1px; }
+    .logo span { color: #F5B800; }
+    .meta { text-align: right; font-size: 10px; color: #666; }
+    .meta b { font-size: 14px; color: #1a1a1a; display: block; margin-bottom: 2px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+    .kpi { border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px 12px; border-top: 3px solid #F5B800; }
+    .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin-bottom: 4px; }
+    .kpi-value { font-size: 20px; font-weight: 700; color: #1a1a1a; }
+    .kpi-sub { font-size: 9px; color: #aaa; margin-top: 2px; }
+    .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin: 16px 0 8px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    th { background: #2d2d2d; color: #fff; padding: 6px 5px; text-align: center; font-size: 9px; font-weight: 600; white-space: nowrap; }
+    td { padding: 5px 5px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+    tr:nth-child(even) td { background: #fafafa; }
+    .footer { margin-top: 20px; font-size: 9px; color: #bbb; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+    @media print { body { padding: 12px 16px; } @page { margin: 1cm; size: A4 landscape; } }
+  </style></head><body>
+  <div class="header">
+    <div class="logo"><span>X</span>DROB</div>
+    <div class="meta">
+      <b>${kurnik.farmName} — ${kurnik.name}</b>
+      Linia: ${kurnik.line || "—"} &nbsp;·&nbsp; Wstawiono: ${kurnik.start || "—"}<br>
+      Wygenerowano: ${generated}
+    </div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="kpi-label">Jaja ogółem</div><div class="kpi-value">${totalEggs.toLocaleString("pl")}</div><div class="kpi-sub">przez cały okres</div></div>
+    <div class="kpi"><div class="kpi-label">Jaja wylęgowe</div><div class="kpi-value">${totalWyleg.toLocaleString("pl")}</div><div class="kpi-sub">łącznie</div></div>
+    <div class="kpi"><div class="kpi-label">Najlepsza nieśność</div><div class="kpi-value">${bestLay?.layPct ?? "—"}%</div><div class="kpi-sub">${bestLay?.date ?? ""}</div></div>
+    <div class="kpi"><div class="kpi-label">Ostatnia nieśność</div><div class="kpi-value">${last?.layPct ?? "—"}%</div><div class="kpi-sub">${last?.date ?? ""}</div></div>
+  </div>
+  <div class="section-title">Dane dzienne — ${sorted.length} wpisów</div>
+  <table>
+    <thead><tr>
+      <th>Data</th><th>Tydz.</th><th>Kury żywe</th><th>Jaja ogółem</th><th>Nieśność %</th>
+      <th>Jaja wylęg.</th><th>Hatch egg %</th><th>Upadki K</th><th>Upadki Kog.</th>
+      <th>Śmiert. %</th><th>Pasza kury</th><th>Waga jaja</th>
+    </tr></thead>
+    <tbody>${sorted.map(row).join("")}</tbody>
+  </table>
+  <div class="footer">XDROB Tracker &nbsp;·&nbsp; xdrob-tracker.vercel.app &nbsp;·&nbsp; ${generated}</div>
+  <script>window.onload = () => window.print();<\/script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+};
+
 const downloadCSV = (rows, filename) => {
   const BOM = "﻿";
   const csv = BOM + rows.map((r) => r.map((v) => {
@@ -1322,11 +1472,14 @@ function KurnikDetail({ kurnik, entries, onBack, onDelete, onEditSave }) {
         </div>
       ) : <p className="helper-text">Brak jeszcze wpisów dla tego kurnika.</p>}
       {sortedAsc.length > 0 && (
-        <button className="btn btn-ghost btn-block" style={{ marginBottom: 8 }} onClick={() => {
-          const headers = ["Data","Tydz. życia","Kury żywe","Koguty żywe","Upadki kury","Upadki koguty","Śmiertelność %","Jaja ogółem","Nieśność %","Jaja wylęg.","Hatch egg %","Waga jaja g","Pasza kury kg","Dawka kury g/szt","Pasza kog. kg","Woda l","Temp. kurnik °C","Temp. magaz. °C","Waga kury g","Waga kog. g"];
-          const rows = sortedAsc.map((e) => [e.date,e.tydzZycia,e.kuryZywe,e.kogutyZywe,e.upadkiKury,e.upadkiKoguty,e.cumMortality,e.jajaOgolem,e.layPct,e.jajaWyleg,e.hatchEggPct,e.wagaJaja,e.paszaKury,e.doseKury,e.paszaKog,e.woda,e.tempKurnik,e.tempMagazJaj,e.wagaKury,e.wagaKog]);
-          downloadCSV([headers, ...rows], `${kurnik.farmName}_${kurnik.name}_${todayISO()}.csv`);
-        }}>⬇ Eksportuj do CSV (Excel)</button>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => printKurnikReport(kurnik, entries)}>📄 Raport PDF</button>
+          <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => {
+            const headers = ["Data","Tydz. życia","Kury żywe","Koguty żywe","Upadki kury","Upadki koguty","Śmiertelność %","Jaja ogółem","Nieśność %","Jaja wylęg.","Hatch egg %","Waga jaja g","Pasza kury kg","Dawka kury g/szt","Pasza kog. kg","Woda l","Temp. kurnik °C","Temp. magaz. °C","Waga kury g","Waga kog. g"];
+            const rows = sortedAsc.map((e) => [e.date,e.tydzZycia,e.kuryZywe,e.kogutyZywe,e.upadkiKury,e.upadkiKoguty,e.cumMortality,e.jajaOgolem,e.layPct,e.jajaWyleg,e.hatchEggPct,e.wagaJaja,e.paszaKury,e.doseKury,e.paszaKog,e.woda,e.tempKurnik,e.tempMagazJaj,e.wagaKury,e.wagaKog]);
+            downloadCSV([headers, ...rows], `${kurnik.farmName}_${kurnik.name}_${todayISO()}.csv`);
+          }}>⬇ CSV (Excel)</button>
+        </div>
       )}
       <div className="section-title">Wszystkie wpisy ({entries.length})</div>
       <div className="entry-list">
@@ -1724,6 +1877,11 @@ function OwnerDashboard({ store, farms, onBack, reload }) {
       <button className="kurnik-detail-link" onClick={() => setShowHatchery(true)}>🥚 Zobacz pełne dane wylęgarni</button>
       <div className="section-title">Fermy</div>
       <p className="helper-text">Stuknij kurnik, aby zobaczyć pełną historię wpisów.</p>
+      {farms.map((farm) => (
+        <button key={farm.id} className="btn btn-ghost btn-block" style={{ marginBottom: 6 }} onClick={() => printFarmReport(farm, store.dzienne)}>
+          📄 Raport PDF — {farm.name}
+        </button>
+      ))}
       <KurnikGrid farms={farms} statusMap={status} selected={null} onSelect={(id) => setDetailId(id)} />
 
       <div className="section-title">Ostatnia aktywność</div>
